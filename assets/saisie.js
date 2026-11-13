@@ -224,24 +224,77 @@
     return o;
   }
 
+  // Photo d'origine (avant recadrage) : conservée et envoyée en plus du ticket recadré
+  var photoOrigBlob = null;
+  var canvasOrigine = null;
+  var derniersCoins = null;
+  var btnRecadrer = null;
+
+  function afficherJustificatif(canvas) {
+    return canvasVersBlob(canvas, 0.82).then(function (blob) {
+      photoBlob = blob;
+      apercu.innerHTML = '';
+      var im = new Image();
+      im.alt = 'Justificatif';
+      im.src = URL.createObjectURL(blob);
+      apercu.appendChild(im);
+      apercu.classList.add('a-image');
+      lireTicket(preparerOcr(canvas));
+    });
+  }
+
+  // Recadrage « façon scanner » (photo seulement, pas pour les PDF)
+  function recadrer(canvas) {
+    if (!window.NDF.recadrer) return Promise.resolve({ canvas: canvas, recadre: false });
+    return window.NDF.recadrer(canvas, derniersCoins).then(function (r) {
+      derniersCoins = r.coins;
+      return r;
+    });
+  }
+
+  function montrerBoutonRecadrer() {
+    if (btnRecadrer || !apercu) return;
+    btnRecadrer = document.createElement('button');
+    btnRecadrer.type = 'button';
+    btnRecadrer.className = 'btn btn-lien';
+    btnRecadrer.textContent = '✂ Ajuster le recadrage';
+    apercu.parentNode.insertBefore(btnRecadrer, apercu.nextSibling);
+    btnRecadrer.addEventListener('click', function () {
+      if (!canvasOrigine) return;
+      recadrer(canvasOrigine).then(function (r) {
+        return canvasVersBlob(canvasOrigine, 0.8).then(function (orig) {
+          photoOrigBlob = r.recadre ? orig : null;
+          return afficherJustificatif(r.canvas);
+        });
+      });
+    });
+  }
+
   $$('input[data-photo]').forEach(function (input) {
     input.addEventListener('change', function () {
       var file = input.files && input.files[0];
       if (!file) return;
       var estPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
       message(estPdf ? 'Ouverture du PDF…' : 'Préparation de la photo…');
+      input.value = '';
+      photoOrigBlob = null;
+      canvasOrigine = null;
+      derniersCoins = null;
+      if (btnRecadrer) btnRecadrer.hidden = true;
       var p = estPdf ? pdfVersCanvas(file) : chargerImage(file).then(function (img) { return versCanvas(img, 1800); });
       p.then(function (canvas) {
-        return canvasVersBlob(canvas, 0.82).then(function (blob) {
-          photoBlob = blob;
-          apercu.innerHTML = '';
-          var im = new Image();
-          im.alt = 'Justificatif';
-          im.src = URL.createObjectURL(blob);
-          apercu.appendChild(im);
-          apercu.classList.add('a-image');
-          input.value = '';
-          lireTicket(preparerOcr(canvas));
+        if (estPdf) {
+          return afficherJustificatif(canvas);
+        }
+        message('');
+        canvasOrigine = canvas;
+        return recadrer(canvas).then(function (r) {
+          montrerBoutonRecadrer();
+          btnRecadrer.hidden = false;
+          return canvasVersBlob(canvas, 0.8).then(function (orig) {
+            photoOrigBlob = r.recadre ? orig : null;
+            return afficherJustificatif(r.canvas);
+          });
         });
       }).catch(function (e) {
         message("Ce fichier n'a pas pu être lu (" + e.message + '). Essayez une photo.', 'ko');
@@ -346,6 +399,7 @@
     fd.delete('photo');
     fd.delete('photo2');
     if (photoBlob) fd.append('photo', photoBlob, 'ticket.jpg');
+    if (photoBlob && photoOrigBlob) fd.append('photo_originale', photoOrigBlob, 'ticket-original.jpg');
     if (conf.doublon) fd.set('confirm_doublon', '1');
     if (conf.seuil) fd.set('confirm_150', '1');
     zoneErreur.hidden = true;

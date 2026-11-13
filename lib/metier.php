@@ -701,6 +701,39 @@ function supprimer_justificatif(?string $rel): void
     if ($p) {
         @unlink($p);
         @unlink(substr($p, 0, -4) . '_t.jpg');
+        @unlink(substr($p, 0, -4) . '_orig.jpg');
+    }
+}
+
+/** Photo d'origine (avant recadrage) d'un justificatif, si elle a été conservée */
+function chemin_original(?string $rel): ?string
+{
+    $p = chemin_justificatif($rel);
+    if (!$p) {
+        return null;
+    }
+    $o = substr($p, 0, -4) . '_orig.jpg';
+    return is_file($o) ? $o : null;
+}
+
+/**
+ * Conserve la photo d'origine à côté du justificatif recadré (même nom + « _orig »).
+ * Un échec ne bloque pas l'enregistrement du ticket.
+ */
+function enregistrer_original(string $tmp, string $rel_justificatif, string $date): void
+{
+    $dest = chemin_justificatif($rel_justificatif);
+    if (!$dest) {
+        return;
+    }
+    try {
+        $rel = stocker_justificatif($tmp, $date);
+        $p = data_dir() . '/' . $rel;
+        if (!@rename($p, substr($dest, 0, -4) . '_orig.jpg')) {
+            @unlink($p);
+        }
+    } catch (Throwable $e) {
+        // tant pis : le justificatif recadré suffit
     }
 }
 

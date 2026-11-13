@@ -56,6 +56,9 @@ $alerte = $id && alerte_facture($dep);
     </div>
     <p class="ocr-etat" id="ocr-etat" hidden></p>
     <?php endif; ?>
+    <?php if ($id && $dep['fichier'] && chemin_original($dep['fichier'])): ?>
+      <a class="petit" href="<?= h(url('fichier', ['id' => $id, 'orig' => 1])) ?>" target="_blank">Voir la photo d'origine (avant recadrage)</a>
+    <?php endif; ?>
     <label class="case petit" data-si-pas-km><input type="checkbox" name="sans_justificatif" value="1" id="chk-sans-justif" <?= $sansJustif ? 'checked' : '' ?>>
       Pas de ticket (perdu ou illisible) : générer un justificatif sans photo</label>
     <p class="aide" id="aide-sans-justif" <?= $sansJustif ? '' : 'hidden' ?>>Un justificatif est généré à partir des informations saisies. Expliquez la situation dans la description. Sans ticket original, la TVA n'est en général pas récupérable.</p>
@@ -191,6 +194,7 @@ $alerte = $id && alerte_facture($dep);
 <script src="assets/vendor/tesseract/tesseract.min.js" defer></script>
 <script src="assets/vendor/pdfjs/pdf.min.js" defer></script>
 <script src="assets/ocr-analyse.js?v=<?= APP_VERSION ?>" defer></script>
+<script src="assets/recadrage.js?v=<?= APP_VERSION ?>" defer></script>
 <script src="assets/saisie.js?v=<?= APP_VERSION ?>" defer></script>
 <?php else: ?>
 <script src="assets/saisie.js?v=<?= APP_VERSION ?>" defer></script>

@@ -277,6 +277,11 @@ case 'depense_save':
         } catch (RuntimeException $e) {
             $err($e->getMessage());
         }
+        // Photo d'origine, envoyée quand le ticket a été recadré sur le téléphone
+        $orig = $_FILES['photo_originale'] ?? null;
+        if ($orig && $orig['error'] === UPLOAD_ERR_OK) {
+            enregistrer_original($orig['tmp_name'], $nouveau_fichier, $date);
+        }
     }
     if ($cat !== 'km' && !$sans_justificatif && !$fichier && !$nouveau_fichier) {
         $err('Ajoutez la photo du ticket : elle est transmise au comptable. Si le ticket est perdu ou illisible, cochez « Pas de ticket ».');
@@ -390,7 +395,8 @@ case 'fichier':
         http_response_code(404);
         exit;
     }
-    $path = !empty($_GET['mini']) ? chemin_miniature($dep['fichier']) : chemin_justificatif($dep['fichier']);
+    $path = !empty($_GET['mini']) ? chemin_miniature($dep['fichier'])
+        : (!empty($_GET['orig']) ? chemin_original($dep['fichier']) : chemin_justificatif($dep['fichier']));
     if (!$path) {
         http_response_code(404);
         exit;
