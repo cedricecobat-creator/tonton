@@ -1,0 +1,42 @@
+# ------------------------------------------------------------
+# Tonton — ce qui ne doit JAMAIS être publié sur GitHub (dépôt public)
+# ------------------------------------------------------------
+
+# Kit de conception : cahier des charges, code de référence,
+# documents avec données réelles
+tonton-kit/
+reference/
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
+# Configuration et secrets
+config.php
+tonton-config.php
+config.path
+*.local.php
+.env
+.env.*
+*.pem
+*.key
+
+# Données (justificatifs, sessions, verrous, exports)
+data/
+tonton-data/
+*.sql
+*.sql.gz
+*.zip
+*.xlsx
+*.csv
+
+# Tests locaux et fichiers temporaires
+tests/out/
+tests/tmp/
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+__pycache__/
+*.pyc
