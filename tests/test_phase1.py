@@ -61,11 +61,11 @@ r = requests.get(BASE + '/install.php')
 s0 = requests.Session()
 html = s0.get(BASE + '/install.php').text
 check('Installation' in html, "page d'installation")
-r = s0.post(BASE + '/install.php', data={'csrf': tok(html), 'cle': 'mauvaise-cle-123', 'prenom': 'Cédric', 'nom': 'Admin',
-                                         'initiales': 'CM', 'email': 'admin@test.local', 'password': 'motdepasse123', 'password2': 'motdepasse123'})
+r = s0.post(BASE + '/install.php', data={'csrf': tok(html), 'cle': 'mauvaise-cle-123', 'prenom': 'Admin', 'nom': 'ecoBAT',
+                                         'initiales': 'ADM', 'email': 'admin@test.local', 'password': 'motdepasse123', 'password2': 'motdepasse123'})
 check('Clé d' in r.text and 'incorrecte' in r.text, "installation refusée sans la bonne clé")
-r = s0.post(BASE + '/install.php', data={'csrf': tok(html), 'cle': CLE, 'prenom': 'Cédric', 'nom': 'Admin',
-                                         'initiales': 'CM', 'email': 'admin@test.local', 'password': 'motdepasse123', 'password2': 'motdepasse123'})
+r = s0.post(BASE + '/install.php', data={'csrf': tok(html), 'cle': CLE, 'prenom': 'Admin', 'nom': 'ecoBAT',
+                                         'initiales': 'ADM', 'email': 'admin@test.local', 'password': 'motdepasse123', 'password2': 'motdepasse123'})
 check('Installation terminée' in r.text, 'installation réussie')
 r = requests.get(BASE + '/install.php')
 check('déjà installé' in r.text and 'name="cle"' not in r.text, "installation impossible une 2e fois")
@@ -95,6 +95,7 @@ html = fabien.get(B, params={'p': 'depense'}).text
 ids = {v: k for k, v in re.findall(r'name="participants\[\]" value="(\d+)"[^>]*><span>([^ <]+)', html)}
 FC, DP = ids['Fabien'], ids['David']
 ordre = re.findall(r'name="participants\[\]" value="\d+"[^>]*><span>([^ <]+)', html)
+check('Admin' not in ordre and 'Cédric' in ordre, 'compte admin absent des participants, membre « Cédric (CM) » conservé')
 check(ordre[:2] == ['Fabien', 'David'], 'participants : Fabien (qui saisit) puis David en tête ' + str(ordre[:3]))
 
 

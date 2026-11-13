@@ -262,6 +262,12 @@ function membre_de_user(int $user_id): ?array
 function lier_membre(int $user_id): void
 {
     $u = q1('SELECT * FROM {users} WHERE id = ?', [$user_id]);
+    // Un compte administrateur sans fiche (compte de gestion) n'est pas un
+    // participant aux repas : il n'est relié à aucun membre de l'équipe.
+    if ($u && $u['role'] === 'admin' && !(int)$u['admin_fiche']) {
+        q('UPDATE {membres} SET user_id = NULL WHERE user_id = ?', [$user_id]);
+        return;
+    }
     if (!$u || membre_de_user($user_id)) {
         if ($u) {
             q('UPDATE {membres} SET prenom = ?, initiales = ? WHERE user_id = ?', [$u['prenom'], $u['initiales'], $user_id]);
