@@ -367,7 +367,7 @@ case 'depense_save':
         }
     }
     flash('Ticket enregistré : ' . euros($montant) . ' le ' . date_fr($date) . '.');
-    $dest = url('accueil', ['a' => $da, 'm' => $dm]);
+    $dest = url_retour($da, $dm);
     if (is_ajax()) {
         json_out(['ok' => true, 'redirect' => $dest]);
     }
@@ -386,7 +386,7 @@ case 'depense_suppr':
     journal('depense_suppr', "#{$dep['id']} {$dep['date_depense']} {$dep['montant']}");
     [$da, $dm] = mois_de_date($dep['date_depense']);
     flash('Ticket supprimé.');
-    redirect(url('accueil', ['a' => $da, 'm' => $dm]));
+    redirect(url_retour($da, $dm));
 
 case 'fichier':
     $u = require_login();

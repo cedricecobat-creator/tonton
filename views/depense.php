@@ -19,7 +19,7 @@ $sansJustif = (int)($dep['sans_justificatif'] ?? 0);
 $alerte = $id && alerte_facture($dep);
 ?>
 <div class="entete-page">
-  <a class="retour" href="<?= h(url('accueil', ['a' => $da, 'm' => $dm])) ?>">‹ Retour</a>
+  <a class="retour" href="<?= h(url_retour($da, $dm)) ?>">‹ Retour<?= ($_GET['retour'] ?? '') === 'fiche' ? ' à la fiche' : '' ?></a>
   <h1><?= $id ? ($modifiable ? 'Modifier le ticket' : 'Ticket') : 'Nouveau ticket' ?></h1>
 </div>
 
@@ -31,7 +31,7 @@ $alerte = $id && alerte_facture($dep);
 
 <form id="form-depense" class="form" method="post" action="<?= h(url('depense_save')) ?>" enctype="multipart/form-data" novalidate>
   <?= csrf_field() ?>
-  <input type="hidden" name="id" value="<?= $id ?>">
+  <input type="hidden" name="id" value="<?= $id ?>"><?= champs_retour() ?>
   <input type="hidden" name="confirm_doublon" value="">
   <input type="hidden" name="confirm_150" value="">
   <fieldset <?= $modifiable ? '' : 'disabled' ?>>
@@ -185,7 +185,7 @@ $alerte = $id && alerte_facture($dep);
 
 <?php if ($id && $modifiable): ?>
 <form method="post" action="<?= h(url('depense_suppr')) ?>" data-confirmer="Supprimer définitivement ce ticket ?" class="form-suppr">
-  <?= csrf_field() ?><input type="hidden" name="id" value="<?= $id ?>">
+  <?= csrf_field() ?><input type="hidden" name="id" value="<?= $id ?>"><?= champs_retour() ?>
   <button class="btn btn-lien btn-danger">Supprimer ce ticket</button>
 </form>
 <?php endif; ?>

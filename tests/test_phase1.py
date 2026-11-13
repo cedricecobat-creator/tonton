@@ -252,7 +252,12 @@ r = conge(admin, 3, '2026-10-21', '', 'formation')
 check('1 jour(s) de formation' in r.text and 21 not in totaux(2026, 10)['David']['jours_primes'], "admin : formation d'une journée pour David, sans prime")
 r = conge(fabien, 2, '2026-10-15', '2026-10-15', action='retirer')
 check(totaux(2026, 10)['Fabien']['nb_primes'] == avant - 2, 'associé : retrait d’un jour de congé (prime rétablie)')
-check(re.search(r'class="lien-ticket" href="index\.php\?p=depense&amp;id=\d+"', f) is not None, 'fiche : les objets mènent au ticket')
+m_lien = re.search(r'class="lien-ticket" href="index\.php\?p=depense&amp;id=(\d+)&amp;retour=fiche&amp;ru=2"', f)
+check(m_lien is not None, 'fiche : les objets mènent au ticket')
+if m_lien:
+    pt = fabien.get(B, params={'p': 'depense', 'id': m_lien.group(1), 'retour': 'fiche', 'ru': 2}).text
+    check('p=fiche&amp;a=2026&amp;m=10&amp;u=2">‹ Retour à la fiche' in pt and 'name="retour" value="fiche"' in pt,
+          'ticket ouvert depuis la fiche : « Retour » ramène à la fiche')
 
 # ---------------------------------------------------------------- cycle du mois
 def action(act, a=2026, m=9, extra=None):

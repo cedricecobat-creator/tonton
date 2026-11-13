@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 define('APP_ROOT', dirname(__DIR__));
-define('APP_VERSION', '1.2.0');
+define('APP_VERSION', '1.2.1');
 
 /**
  * Emplacement du fichier de configuration.
@@ -158,6 +158,28 @@ function url(string $page, array $params = []): string
 {
     $params = ['p' => $page] + $params;
     return 'index.php?' . http_build_query($params);
+}
+
+/**
+ * Page où revenir après un ticket : la fiche mensuelle si on vient de la fiche
+ * (paramètres retour=fiche et ru=personne), sinon la liste des tickets du mois.
+ */
+function url_retour(int $a, int $m): string
+{
+    if (($_REQUEST['retour'] ?? '') === 'fiche') {
+        $ru = (int)($_REQUEST['ru'] ?? 0);
+        return url('fiche', ['a' => $a, 'm' => $m] + ($ru > 0 ? ['u' => $ru] : []));
+    }
+    return url('accueil', ['a' => $a, 'm' => $m]);
+}
+
+/** Champs cachés qui transmettent la page de retour aux formulaires */
+function champs_retour(): string
+{
+    if (($_REQUEST['retour'] ?? '') !== 'fiche') {
+        return '';
+    }
+    return '<input type="hidden" name="retour" value="fiche"><input type="hidden" name="ru" value="' . (int)($_REQUEST['ru'] ?? 0) . '">';
 }
 
 function redirect(string $to): never

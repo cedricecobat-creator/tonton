@@ -6,7 +6,7 @@ $t = $fiche['totaux'];
 $ouvert = mois_ouvert($a, $m);
 $estMoi = (int)$fiche['user']['id'] === (int)$user['id'];
 $lienTicket = fn(array $d, string $texte): string =>
-    '<a class="lien-ticket" href="' . h(url('depense', ['id' => $d['id']])) . '">' . h($texte) . '</a>';
+    '<a class="lien-ticket" href="' . h(url('depense', ['id' => $d['id'], 'retour' => 'fiche', 'ru' => $fiche['user']['id']])) . '">' . h($texte) . '</a>';
 ?>
 <?php if (est_admin($user)): ?>
   <div class="onglets">
