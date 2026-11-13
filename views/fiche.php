@@ -3,9 +3,12 @@ $page = 'fiche';
 $extra = ['u' => $fiche['user']['id']];
 require __DIR__ . '/_mois.php';
 $t = $fiche['totaux'];
-$motifs = ['weekend' => '', 'ferie' => 'Férié', 'conge' => 'Congé', 'formation' => 'Formation', 'a_venir' => 'À venir'];
+$ouvert = mois_ouvert($a, $m);
+$estMoi = (int)$fiche['user']['id'] === (int)$user['id'];
+$lienTicket = fn(array $d, string $texte): string =>
+    '<a class="lien-ticket" href="' . h(url('depense', ['id' => $d['id']])) . '">' . h($texte) . '</a>';
 ?>
-<?php if ($user['role'] === 'admin'): ?>
+<?php if (est_admin($user)): ?>
   <div class="onglets">
     <?php foreach (associes() as $as): ?>
       <a class="<?= (int)$as['id'] === (int)$fiche['user']['id'] ? 'actif' : '' ?>" href="<?= h(url('fiche', ['a' => $a, 'm' => $m, 'u' => $as['id']])) ?>"><?= h($as['prenom']) ?></a>
@@ -39,24 +42,29 @@ $motifs = ['weekend' => '', 'ferie' => 'Férié', 'conge' => 'Congé', 'formatio
   <tbody>
   <?php foreach ($fiche['jours'] as $d => $j):
       $classe = $j['jour_semaine'] >= 6 || $j['motif'] === 'ferie' ? 'ligne-grise' : '';
+      if (in_array($j['motif'], ['conge', 'formation'], true)) {
+          $classe = 'ligne-' . $j['motif'];
+      }
+      // Notes : repas du midi (supprime la prime) et dépenses CB entreprise, avec lien vers le ticket
       $notes = [];
       foreach ($j['repas_midi_par'] as $r) {
           $lib = (int)$r['equipe'] ? "Repas d'équipe" : 'Repas midi';
-          $notes[] = (int)$r['user_id'] === (int)$fiche['user']['id']
+          $notes[] = $lienTicket($r, (int)$r['user_id'] === (int)$fiche['user']['id']
               ? $lib . ' ' . PAIEMENTS[$r['paiement']] . ' ' . euros($r['montant'])
-              : $lib . ' réglé par ' . $r['payeur_prenom'] . ' (' . PAIEMENTS[$r['paiement']] . ')';
+              : $lib . ' réglé par ' . $r['payeur_prenom'] . ' (' . PAIEMENTS[$r['paiement']] . ')');
       }
       foreach ($j['cb_pro'] as $r) {
           if ($r['categorie'] !== 'repas' || !$r['repas_midi']) {
-              $notes[] = CATEGORIES[$r['categorie']] . ' CB entreprise ' . euros($r['montant']);
+              $notes[] = $lienTicket($r, CATEGORIES[$r['categorie']] . ' CB entreprise ' . euros($r['montant']));
           }
       }
   ?>
     <tr class="<?= $classe ?>">
       <td class="nowrap"><?= h(date_fr($d, true)) ?></td>
       <td>
-        <?= h(implode(' / ', $j['objets'])) ?>
-        <?php if ($notes): ?><div class="note-ligne"><?= h(implode(' · ', $notes)) ?></div><?php endif; ?>
+        <?php foreach ($j['etiquettes'] as $e): ?><span class="etiquette-jour"><?= h($e) ?></span> <?php endforeach; ?>
+        <?= implode(' / ', array_map(fn($tk) => $lienTicket($tk, $tk['objet']), $j['tickets'])) ?>
+        <?php if ($notes): ?><div class="note-ligne"><?= implode(' · ', $notes) ?></div><?php endif; ?>
         <?php if ($j['motif'] === 'a_venir'): ?><div class="note-ligne">À venir</div><?php endif; ?>
       </td>
       <td><?= h(implode(' / ', array_unique($j['lieux']))) ?></td>
@@ -86,9 +94,58 @@ $motifs = ['weekend' => '', 'ferie' => 'Férié', 'conge' => 'Congé', 'formatio
   </tfoot>
 </table>
 </div>
-<p class="aide"><span class="prime">P</span> prime repas de <?= euros($fiche['prime_montant']) ?> incluse dans la colonne Repas. Les dépenses payées avec la CB entreprise ne figurent pas dans les montants.</p>
+<p class="aide"><span class="prime">P</span> prime repas de <?= euros($fiche['prime_montant']) ?> incluse dans la colonne Repas. Les dépenses payées avec la CB entreprise ne figurent pas dans les montants. Touchez un objet pour ouvrir le ticket.</p>
 
-<?php if ($user['role'] === 'admin'): ?>
+<section class="carte" id="conges">
+  <h2 class="titre-section">Congés et formations<?= $estMoi ? '' : ' de ' . h($fiche['user']['prenom']) ?></h2>
+  <p class="petit muted">Journées entières seulement (une demi-journée ne supprime pas la prime). Ces jours apparaissent sur la fiche et n'ont pas de prime repas.</p>
+  <?php if ($periodes): ?>
+    <ul class="rh-periodes">
+    <?php foreach ($periodes as [$du, $au, $nb, $type]): ?>
+      <li>
+        <span><span class="etiquette-jour etiquette-<?= h($type) ?>"><?= $type === 'conge' ? 'Congé' : 'Formation' ?></span>
+          <?= $du === $au ? 'le ' . h(date_fr($du, true)) : 'du ' . h(date_fr($du, true)) . ' au ' . h(date_fr($au, true)) ?>
+          <span class="muted petit">(<?= $nb ?> j)</span></span>
+        <?php if ($ouvert): ?>
+        <form method="post" action="<?= h(url('absence_perso')) ?>" class="form-x" data-confirmer="Retirer cette période ?">
+          <?= csrf_field() ?>
+          <input type="hidden" name="u" value="<?= (int)$fiche['user']['id'] ?>"><input type="hidden" name="a" value="<?= $a ?>"><input type="hidden" name="m" value="<?= $m ?>">
+          <input type="hidden" name="du" value="<?= h($du) ?>"><input type="hidden" name="au" value="<?= h($au) ?>">
+          <input type="hidden" name="type" value="<?= h($type) ?>"><input type="hidden" name="action" value="retirer">
+          <button class="btn-x" aria-label="Retirer">×</button>
+        </form>
+        <?php endif; ?>
+      </li>
+    <?php endforeach; ?>
+    </ul>
+  <?php else: ?>
+    <p class="petit">Aucun congé ni formation ce mois-ci.</p>
+  <?php endif; ?>
+
+  <?php if ($ouvert):
+      [$debutMois, $finMois] = mois_bornes($a, $m);
+      $auj = aujourdhui();
+      $debutMois = $auj >= $debutMois && $auj <= $finMois ? $auj : $debutMois; ?>
+  <form method="post" action="<?= h(url('absence_perso')) ?>" class="form form-conge">
+    <?= csrf_field() ?>
+    <input type="hidden" name="u" value="<?= (int)$fiche['user']['id'] ?>"><input type="hidden" name="a" value="<?= $a ?>"><input type="hidden" name="m" value="<?= $m ?>">
+    <div class="choix choix-2">
+      <label class="puce"><input type="radio" name="type" value="conge" checked><span>Congé</span></label>
+      <label class="puce"><input type="radio" name="type" value="formation"><span>Formation</span></label>
+    </div>
+    <div class="grille-2">
+      <label>Du<input type="date" name="du" required value="<?= h($debutMois) ?>"></label>
+      <label>Au <span class="muted petit">(inclus)</span><input type="date" name="au" value=""></label>
+    </div>
+    <p class="aide">Laissez « Au » vide pour une seule journée. Week-ends et jours fériés ne sont pas comptés.</p>
+    <button class="btn btn-secondaire btn-plein">Ajouter</button>
+  </form>
+  <?php else: ?>
+    <p class="alerte petit">Le mois est validé : les congés et formations ne peuvent plus être modifiés.</p>
+  <?php endif; ?>
+</section>
+
+<?php if (est_admin($user)): ?>
   <p class="actions">
     <a class="btn btn-secondaire" href="<?= h(url('export_pdf', ['a' => $a, 'm' => $m, 'u' => $fiche['user']['id']])) ?>">PDF de cette fiche + justificatifs</a>
   </p>

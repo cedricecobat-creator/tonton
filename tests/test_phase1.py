@@ -234,6 +234,26 @@ check('1 ticket(s) de 150' in g and 'Points d' in g, "point d'attention côté a
 acc = fabien.get(B, params={'p': 'accueil', 'a': 2026, 'm': 10}).text
 check('badge-alerte' in acc and 'facture demandée' in acc, 'badges « facture > 150 € HT » et « facture demandée » dans la liste')
 
+# ---------------------------------------------------------------- congés saisis par l'associé
+def conge(s, u, du, au, type_='conge', action='ajouter'):
+    return s.post(B + '?p=absence_perso', data={'csrf': s.csrf, 'u': u, 'a': du[:4], 'm': int(du[5:7]), 'du': du, 'au': au,
+                                                 'type': type_, 'action': action})
+
+
+avant = totaux(2026, 10)['Fabien']['nb_primes']
+r = conge(fabien, 2, '2026-10-14', '2026-10-18')
+check('3 jour(s) de congé' in r.text, "associé : ajout de ses congés du 14 au 18/10 (3 jours ouvrés, week-end exclu) " + flashes(r.text))
+check(totaux(2026, 10)['Fabien']['nb_primes'] == avant - 3, 'congés : 3 primes repas retirées')
+f = fabien.get(B, params={'p': 'fiche', 'a': 2026, 'm': 10}).text
+check('ligne-conge' in f and 'du mer. 14/10/2026 au ven. 16/10/2026' in f, 'congés : notés sur la fiche mensuelle')
+r = conge(david, 2, '2026-10-20', '2026-10-20')
+check(r.status_code == 403, "un associé ne peut pas saisir les congés d'un autre")
+r = conge(admin, 3, '2026-10-21', '', 'formation')
+check('1 jour(s) de formation' in r.text and 21 not in totaux(2026, 10)['David']['jours_primes'], "admin : formation d'une journée pour David, sans prime")
+r = conge(fabien, 2, '2026-10-15', '2026-10-15', action='retirer')
+check(totaux(2026, 10)['Fabien']['nb_primes'] == avant - 2, 'associé : retrait d’un jour de congé (prime rétablie)')
+check(re.search(r'class="lien-ticket" href="index\.php\?p=depense&amp;id=\d+"', f) is not None, 'fiche : les objets mènent au ticket')
+
 # ---------------------------------------------------------------- cycle du mois
 def action(act, a=2026, m=9, extra=None):
     data = {'csrf': admin.csrf, 'a': a, 'm': m, 'action': act}
@@ -255,6 +275,8 @@ r = fabien.post(B + '?p=depense_suppr', data={'csrf': fabien.csrf, 'id': id_dart
 check('impossible' in r.text, 'mois validé : suppression refusée')
 r = admin.post(B + '?p=absence_set', data={'csrf': admin.csrf, 'user_id': 2, 'date': d + '17', 'type': 'conge'}, headers={'X-Requested-With': 'fetch'})
 check(r.status_code == 400, 'mois validé : absences verrouillées')
+r = conge(fabien, 2, d + '17', d + '17')
+check('déjà validé' in r.text and 17 in totaux()['Fabien']['jours_primes'], 'mois validé : congé saisi par l’associé ignoré')
 r = action('prime', extra={'prime_montant': '5'})
 check('ne peut être changé' in r.text, 'mois validé : prime repas figée')
 t = totaux()

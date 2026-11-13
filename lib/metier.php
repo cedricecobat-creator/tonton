@@ -434,6 +434,51 @@ function absences_periode(string $debut, string $fin, ?int $user_id = null): arr
     return $out;
 }
 
+/**
+ * Ajoute (ou retire) une période de congé / formation en journées entières :
+ * seuls les jours ouvrés hors fériés sont comptés, les mois validés sont ignorés.
+ * Retourne [jours traités, jours ignorés car le mois est validé].
+ */
+function absences_periode_maj(int $user_id, string $du, string $au, string $type, bool $ajout, string $source): array
+{
+    $n = 0;
+    $verrouilles = 0;
+    for ($d = new DateTimeImmutable($du); $d->format('Y-m-d') <= $au; $d = $d->modify('+1 day')) {
+        $ymd = $d->format('Y-m-d');
+        if ((int)$d->format('N') >= 6 || isset(feries((int)$d->format('Y'))[$ymd])) {
+            continue;
+        }
+        [$a, $m] = mois_de_date($ymd);
+        if (!mois_ouvert($a, $m)) {
+            $verrouilles++;
+            continue;
+        }
+        if ($ajout) {
+            absence_set($user_id, $ymd, $type, $source);
+            $n++;
+        } elseif (q1('SELECT 1 x FROM {absences} WHERE user_id = ? AND date_absence = ? AND type = ?', [$user_id, $ymd, $type])) {
+            absence_set($user_id, $ymd, null);
+            $n++;
+        }
+    }
+    return [$n, $verrouilles];
+}
+
+/** Périodes de congé et de formation d'une personne sur un mois : [[du, au, nb jours, type], …] */
+function absences_periodes(int $user_id, int $a, int $m): array
+{
+    [$debut, $fin] = mois_bornes($a, $m);
+    $abs = absences_periode($debut, $fin, $user_id)[$user_id] ?? [];
+    $out = [];
+    foreach (['conge', 'formation'] as $type) {
+        foreach (periodes(array_keys(array_filter($abs, fn($t) => $t === $type))) as [$du, $au, $nb]) {
+            $out[] = [$du, $au, $nb, $type];
+        }
+    }
+    usort($out, fn($x, $y) => strcmp($x[0], $y[0]));
+    return $out;
+}
+
 function absence_set(int $user_id, string $date, ?string $type, string $source = 'manuel'): void
 {
     q('DELETE FROM {absences} WHERE user_id = ? AND date_absence = ?', [$user_id, $date]);
@@ -475,7 +520,7 @@ function calcul_fiche(array $user, int $a, int $m): array
         $d = sprintf('%04d-%02d-%02d', $a, $m, $j);
         $jours[$d] = [
             'date' => $d, 'jour_semaine' => (int)(new DateTimeImmutable($d))->format('N'),
-            'objets' => [], 'lieux' => [], 'kms' => 0.0, 'coef' => null, 'total_kms' => 0.0,
+            'objets' => [], 'etiquettes' => [], 'tickets' => [], 'lieux' => [], 'kms' => 0.0, 'coef' => null, 'total_kms' => 0.0,
             'peage' => 0.0, 'repas' => 0.0, 'carburant' => 0.0, 'autres' => 0.0,
             'prime' => 0.0, 'motif' => null, 'repas_midi_par' => [], 'cb_pro' => [], 'total' => 0.0,
         ];
@@ -502,6 +547,7 @@ function calcul_fiche(array $user, int $a, int $m): array
         }
         // Montants à régler à l'associé
         $row['objets'][] = $dep['objet'];
+        $row['tickets'][] = ['id' => (int)$dep['id'], 'objet' => $dep['objet']];
         if (trim((string)$dep['lieu']) !== '') {
             $row['lieux'][] = lieu_complet($dep);
         }
@@ -533,9 +579,11 @@ function calcul_fiche(array $user, int $a, int $m): array
         } elseif (isset($feries[$d])) {
             $row['motif'] = 'ferie';
             array_unshift($row['objets'], $feries[$d]);
+            $row['etiquettes'][] = $feries[$d];
         } elseif (isset($abs[$d])) {
             $row['motif'] = $abs[$d];
             array_unshift($row['objets'], $abs[$d] === 'conge' ? 'Congé' : 'Formation');
+            $row['etiquettes'][] = $abs[$d] === 'conge' ? 'Congé' : 'Formation';
         } elseif ($row['repas_midi_par']) {
             $row['motif'] = 'repas';
         } elseif (!$definitif && $d > $today) {

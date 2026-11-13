@@ -23,7 +23,10 @@ $moi = (int)$user['id'];
     <div><dt>Primes repas</dt><dd><?= $fiche['nb_primes'] ?> × <?= euros($fiche['prime_montant']) ?></dd></div>
     <div class="muted"><dt>CB entreprise (info)</dt><dd><?= count($fiche['cb_pro']) ?> ticket(s) · <?= euros($fiche['total_cb_pro']) ?></dd></div>
   </dl>
-  <a class="lien-discret" href="<?= h(url('fiche', ['a' => $a, 'm' => $m])) ?>">Voir ma fiche du mois →</a>
+  <p class="liens-resume">
+    <a class="lien-discret" href="<?= h(url('fiche', ['a' => $a, 'm' => $m])) ?>">Voir ma fiche du mois →</a>
+    <a class="lien-discret" href="<?= h(url('fiche', ['a' => $a, 'm' => $m])) ?>#conges">Mes congés et formations →</a>
+  </p>
 </section>
 <?php endif; ?>
 

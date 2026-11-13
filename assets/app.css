@@ -407,3 +407,18 @@ body.sans-defilement { overflow: hidden; }
 .recadre-boutons { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
 .recadre-boutons .btn { padding: .9rem; }
 .recadre-boutons .btn-secondaire { background: #3a3838; color: #fff; }
+
+/* Fiche : liens vers les tickets, congés et formations */
+.lien-ticket { color: inherit; text-decoration: underline; text-decoration-color: var(--vert); text-underline-offset: 2px; }
+.lien-ticket:hover { color: var(--vert-fonce); }
+.note-ligne .lien-ticket { color: var(--encre-2); }
+.etiquette-jour { display: inline-block; font-size: .72rem; font-weight: 700; padding: .05rem .45rem; border-radius: 99px; background: #ecebeb; color: var(--gris); }
+.etiquette-conge, .ligne-conge .etiquette-jour { background: #fdf1e3; color: #9a5b00; }
+.etiquette-formation, .ligne-formation .etiquette-jour { background: #e8eefc; color: #2c4a9a; }
+.ligne-conge td { background: #fffaf3; }
+.ligne-formation td { background: #f6f8fe; }
+.form-conge { margin-top: .8rem; }
+.liens-resume { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; margin: 0; }
+.form-conge, .form-conge > *, .form-conge .grille-2 > *, .form-conge .choix-2 > * { min-width: 0; }
+.form-conge .grille-2, .form-conge .choix-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+input[type=date] { min-width: 0; max-width: 100%; }

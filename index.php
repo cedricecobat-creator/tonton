@@ -424,7 +424,8 @@ case 'fiche':
         redirect(url(is_admin() ? 'gestion' : 'accueil', ['a' => $a, 'm' => $m]));
     }
     $fiche = calcul_fiche($cible, $a, $m);
-    render('fiche', compact('a', 'm', 'fiche'), 'Fiche ' . mois_libelle($a, $m));
+    $periodes = absences_periodes((int)$cible['id'], $a, $m);
+    render('fiche', compact('a', 'm', 'fiche', 'periodes'), 'Fiche ' . mois_libelle($a, $m));
 
 /* ------------------------------------------------------------------ */
 case 'fiche_rh':
@@ -916,6 +917,47 @@ case 'membre_save':
         flash('Membre ajouté.');
     }
     redirect(url('utilisateurs') . '#membres');
+
+case 'absence_perso':
+    // Congés / formations en journées entières, saisis par l'associé lui-même ou par l'administrateur
+    post_only();
+    $u = require_login();
+    $uid = (int)($_POST['u'] ?? 0);
+    $cible = q1('SELECT * FROM {users} WHERE id = ? AND actif = 1', [$uid]);
+    $a = (int)($_POST['a'] ?? 0);
+    $m = (int)($_POST['m'] ?? 0);
+    $retour = url('fiche', ['a' => $a, 'm' => $m] + (is_admin() ? ['u' => $uid] : []));
+    $autorise = $cible && (est_associe($cible) || est_salarie_fiche($cible))
+        && ((int)$cible['id'] === (int)$u['id'] || is_admin());
+    if (!$autorise) {
+        http_response_code(403);
+        exit('Action non autorisée.');
+    }
+    $type = ($_POST['type'] ?? '') === 'formation' ? 'formation' : 'conge';
+    $du = (string)($_POST['du'] ?? '');
+    $au = (string)($_POST['au'] ?? '') !== '' ? (string)$_POST['au'] : $du;
+    $ok = fn(string $d) => (bool)preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && DateTimeImmutable::createFromFormat('!Y-m-d', $d);
+    if (!$ok($du) || !$ok($au) || $au < $du) {
+        flash('Indiquez une date de début et une date de fin valides.', 'erreur');
+        redirect($retour);
+    }
+    if ((new DateTimeImmutable($du))->diff(new DateTimeImmutable($au))->days > 62) {
+        flash('Période trop longue : deux mois au maximum à la fois.', 'erreur');
+        redirect($retour);
+    }
+    $ajout = ($_POST['action'] ?? 'ajouter') !== 'retirer';
+    [$n, $verr] = absences_periode_maj($uid, $du, $au, $type, $ajout, is_admin() ? 'manuel' : 'associe');
+    $lib = $type === 'conge' ? 'congé' : 'formation';
+    if ($ajout) {
+        flash($n ? "$n jour(s) de $lib enregistré(s) : pas de prime repas ces jours-là." : 'Aucun jour ouvré dans cette période (week-end ou férié).', $n ? 'ok' : 'attention');
+    } else {
+        flash("$n jour(s) de $lib retiré(s).");
+    }
+    if ($verr) {
+        flash("$verr jour(s) ignoré(s) : leur mois est déjà validé.", 'attention');
+    }
+    journal('absence', "{$cible['initiales']} $lib " . ($ajout ? 'ajout' : 'retrait') . " $du → $au ($n j)");
+    redirect($retour);
 
 case 'siren':
     require_login();
