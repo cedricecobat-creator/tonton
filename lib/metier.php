@@ -99,13 +99,38 @@ function mois_bornes(int $annee, int $mois): array
     return [$debut, sprintf('%04d-%02d-%02d', $annee, $mois, $nb), $nb];
 }
 
-/** Mois sélectionné via ?a=2026&m=9, sinon mois courant */
+/**
+ * Premier mois géré par Tonton (« AAAA-MM », octobre 2026 par défaut).
+ * Les mois précédents ont été traités hors de Tonton : ils ne s'affichent pas et sont
+ * considérés comme clos ; un ticket ou un congé daté d'avant est régularisé sur le
+ * premier mois ouvert.
+ */
+function premier_mois(): array
+{
+    $v = (string)(cfg('premier_mois') ?? '2026-10');
+    if (!preg_match('/^(\d{4})-(\d{2})$/', $v, $p) || (int)$p[2] < 1 || (int)$p[2] > 12) {
+        $p = [null, '2026', '10'];
+    }
+    return [(int)$p[1], (int)$p[2]];
+}
+
+/** Ce mois est-il antérieur au démarrage de Tonton ? */
+function avant_tonton(int $a, int $m): bool
+{
+    [$pa, $pm] = premier_mois();
+    return $a * 12 + $m < $pa * 12 + $pm;
+}
+
+/** Mois sélectionné via ?a=2026&m=9, sinon mois courant (jamais avant le premier mois géré) */
 function mois_demande(): array
 {
     $a = (int)($_GET['a'] ?? 0);
     $m = (int)($_GET['m'] ?? 0);
     if ($a < 2020 || $a > 2100 || $m < 1 || $m > 12) {
         [$a, $m] = array_map('intval', explode('-', substr(aujourdhui(), 0, 7)));
+    }
+    if (avant_tonton($a, $m)) {
+        [$a, $m] = premier_mois();
     }
     return [$a, $m];
 }
@@ -153,6 +178,9 @@ function mois_set_statut(int $a, int $m, string $statut): void
 
 function mois_ouvert(int $a, int $m): bool
 {
+    if (avant_tonton($a, $m)) {
+        return false;
+    }
     return mois_info($a, $m)['statut'] === 'ouvert';
 }
 

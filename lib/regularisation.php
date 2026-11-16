@@ -78,14 +78,14 @@ function elements_tardifs_jour(array $user, string $ymd): array
         $d = depense_get((int)$r['id']);
         if ($d && est_participant($d, $user)) {
             $lib = ((int)$d['equipe'] ? "repas d'équipe" : 'repas du midi')
-                . ((int)$d['user_id'] === $uid ? '' : ' réglé par ' . $d['payeur_prenom']) . ' saisi après la clôture';
+                . ((int)$d['user_id'] === $uid ? '' : ' réglé par ' . $d['payeur_prenom']) . (avant_tonton(...mois_de_date($ymd)) ? ' saisi dans Tonton' : ' saisi après la clôture');
             $out[] = [mois_index((int)$d['regul_annee'], (int)$d['regul_mois']), $lib, (int)$d['id']];
         }
     }
     $abs = q1('SELECT * FROM {absences} WHERE user_id = ? AND date_absence = ? AND regul_annee IS NOT NULL', [$uid, $ymd]);
     if ($abs) {
         $out[] = [mois_index((int)$abs['regul_annee'], (int)$abs['regul_mois']),
-            $abs['type'] === 'conge' ? 'congé déclaré après la clôture' : 'formation déclarée après la clôture', null];
+            ($abs['type'] === 'conge' ? 'congé déclaré' : 'formation déclarée') . (avant_tonton(...mois_de_date($ymd)) ? ' dans Tonton' : ' après la clôture'), null];
     }
     return $out;
 }
@@ -135,7 +135,8 @@ function regularisations_fiche(array $user, int $a, int $m): array
         $lignes[] = [
             'type' => 'absence', 'date' => $abs['date_absence'], 'id' => (int)$abs['id'],
             'libelle' => ($abs['type'] === 'conge' ? 'Congé du ' : 'Formation du ') . date_fr($abs['date_absence'], true)
-                . ($abs['type'] === 'conge' ? ' déclaré' : ' déclarée') . ' après la clôture',
+                . ($abs['type'] === 'conge' ? ' déclaré' : ' déclarée')
+                . (avant_tonton(...mois_de_date($abs['date_absence'])) ? ' (mois antérieur à Tonton)' : ' après la clôture'),
             'montant' => 0.0, 'actif' => true, 'compte' => false,
         ];
         $jours_prime[$abs['date_absence']] = true;
@@ -156,7 +157,8 @@ function regularisations_fiche(array $user, int $a, int $m): array
                 $actif = regul_choix_actif($uid, $ymd);
                 $lignes[] = [
                     'type' => 'prime', 'date' => $ymd, 'date_ref' => $ymd,
-                    'libelle' => 'Prime repas du ' . date_fr($ymd, true) . ' déjà versée (' . $motifs . ')',
+                    'libelle' => 'Prime repas du ' . date_fr($ymd, true)
+                        . (avant_tonton(...mois_de_date($ymd)) ? ' présumée versée hors Tonton (' : ' déjà versée (') . $motifs . ')',
                     'montant' => -$prime, 'actif' => $actif, 'compte' => $actif,
                 ];
             } else {
@@ -190,6 +192,19 @@ function total_regularisations(array $lignes): float
         }
     }
     return round($t, 2);
+}
+
+/**
+ * Tickets et congés datés d'avant le premier mois géré qui ne sont pas en régularisation :
+ * saisis avant que le démarrage soit fixé, ils ont été traités hors de Tonton
+ * et ne comptent nulle part (ils restent en base, sans être modifiables).
+ */
+function nb_hors_tonton(): int
+{
+    [$pa, $pm] = premier_mois();
+    $debut = sprintf('%04d-%02d-01', $pa, $pm);
+    return (int)q1('SELECT COUNT(*) n FROM {depenses} WHERE regul_annee IS NULL AND date_depense < ?', [$debut])['n']
+        + (int)q1('SELECT COUNT(*) n FROM {absences} WHERE regul_annee IS NULL AND date_absence < ?', [$debut])['n'];
 }
 
 /** Enregistre un congé / une formation tardif(ve) sur un mois clos, rattaché(e) au premier mois ouvert */

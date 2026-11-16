@@ -166,7 +166,9 @@ case 'depense_save':
         $deja = $ancien && $ancien['regul_annee'] !== null
             && (int)$ancien['regul_annee'] === $regul[0] && (int)$ancien['regul_mois'] === $regul[1];
         if (!$deja && empty($_POST['confirm_regul'])) {
-            $err('Le mois de ' . mois_libelle($da, $dm) . ' est déjà validé. Ce ticket sera régularisé sur la fiche de '
+            $err('Le mois de ' . mois_libelle($da, $dm) . (avant_tonton($da, $dm)
+                    ? ' a été traité avant Tonton (démarrage en ' . mois_libelle(...premier_mois()) . ').'
+                    : ' est déjà validé.') . ' Ce ticket sera régularisé sur la fiche de '
                 . mois_libelle($regul[0], $regul[1]) . ' : remboursement s\'il a été payé avec vos fonds, et retrait de la prime repas '
                 . 'si elle avait été versée ce jour-là. Continuer ?', ['confirmRegul' => true]);
         }

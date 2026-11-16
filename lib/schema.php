@@ -279,7 +279,6 @@ function maj_schema(): void
             q("ALTER TABLE {{$table}} ADD regul_annee SMALLINT UNSIGNED NULL, ADD regul_mois TINYINT UNSIGNED NULL");
         }
     }
-
     if (!(int)q1('SELECT COUNT(*) n FROM {membres}')['n']) {
         foreach (MEMBRES_INITIAUX as $i => [$prenom, $ini]) {
             q('INSERT INTO {membres} (prenom, initiales, ordre, actif) VALUES (?, ?, ?, 1)', [$prenom, $ini, ($i + 1) * 10]);

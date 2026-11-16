@@ -3,6 +3,10 @@
 Application interne de notes de frais d'ecoBAT, utilisable sur téléphone comme une appli.
 Adresse : https://tonton.ecobat-habitat.com
 
+Tonton gère les fiches à partir d'**octobre 2026** (réglage `premier_mois`) : les mois précédents ont été
+traités avant Tonton et ne s'affichent pas ; un ticket ou un congé daté d'avant, saisi ensuite, est régularisé
+sur le premier mois ouvert (la prime repas de ce jour-là est présumée versée, l'admin peut décocher la déduction).
+
 Phase 1 (en cours) : administrateur + associés. L'espace salariés (phase 2) existe
 mais reste **désactivé** tant que `module_salaries` vaut `false` dans la configuration.
 
@@ -76,7 +80,7 @@ La base de données est mise à niveau automatiquement à la première visite.
   ```
 
   et `node tests/ocr_analyse_test.js` pour la lecture des tickets (dates en lettres, annotations).
-  Ils rejouent septembre 2026 (Fabien 225,96 €, David 9,50 €) et vérifient les droits,
+  La configuration de test doit contenir `'premier_mois' => '2026-01'`. Ils rejouent septembre 2026 (Fabien 225,96 €, David 9,50 €) et vérifient les droits,
   l'alerte des 150 € HT, le verrouillage du mois et les exports.
 - Le dossier `tonton-kit/` (cahier des charges, code et documents de référence avec des données réelles)
   n'est **jamais** publié : il est exclu par `.gitignore`.

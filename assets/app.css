@@ -104,6 +104,7 @@ pre { background: #f6f7f9; border: 1px solid var(--ligne); padding: .6rem .8rem;
   width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: var(--carte);
   box-shadow: var(--ombre); text-decoration: none; font-size: 1.6rem; line-height: 1; color: var(--primaire);
 }
+.mois-fleche-off { opacity: .3; box-shadow: none; cursor: default; }
 .mois-centre { text-align: center; }
 .mois-nom { display: block; font-weight: 700; font-size: 1.15rem; }
 .pastille { display: inline-block; font-size: .72rem; padding: .1rem .55rem; border-radius: 99px; background: var(--primaire-clair); color: var(--primaire); font-weight: 600; }
