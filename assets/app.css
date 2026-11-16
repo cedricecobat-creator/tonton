@@ -454,3 +454,5 @@ input[type=date] { min-width: 0; max-width: 100%; }
 .filtre-texte { grid-column: 1 / -1; }
 .badge-filtres { background: var(--primaire); color: #fff; }
 .filtres-resultat { margin: -.3rem 0 .6rem; }
+
+.alerte-texte { display: block; color: #b3261e; margin-top: .25rem; }

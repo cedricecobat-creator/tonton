@@ -78,6 +78,15 @@ function diagnostic(): array
     $nh = nb_hors_tonton();
     $c[] = ['Premier mois géré', 'ok', ucfirst(mois_libelle(...premier_mois()))
         . ($nh ? " — $nh ticket(s) ou congé(s) daté(s) d'avant, saisi(s) avant ce réglage : laissé(s) de côté" : '')];
+    if (($_GET['annuaire'] ?? '') === '1') {
+        $t = microtime(true);
+        $r = annuaire_siret('13002526500013', 6); // établissement public de test (DINUM)
+        $c[] = ['Annuaire des entreprises (SIRET)', $r['ok'] && $r['commercant'] ? 'ok' : 'attention',
+            $r['ok'] && $r['commercant'] ? 'Joignable (' . round((microtime(true) - $t) * 1000) . ' ms)'
+                : 'Injoignable : ' . ($r['erreur'] ?? 'réponse inattendue') . '. La saisie fonctionne, sans recherche des commerçants par SIRET.'];
+    } else {
+        $c[] = ['Annuaire des entreprises (SIRET)', 'ok', "Non testé (lien « Tester l'annuaire des entreprises » ci-dessous)"];
+    }
     $c[] = ['Module salariés', module_salaries() ? 'attention' : 'ok', module_salaries() ? 'Activé' : 'Désactivé (phase 1)'];
     $c[] = ['Expéditeur des e-mails', cfg('email_expediteur') ? 'ok' : 'attention', (string)(cfg('email_expediteur') ?? 'non renseigné')];
     $c[] = ['Version de Tonton', 'ok', APP_VERSION];

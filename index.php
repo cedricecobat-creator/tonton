@@ -250,6 +250,9 @@ case 'depense_save':
     if ($siret !== '' && strlen($siret) !== 14) {
         $err('Le SIRET du commerçant doit comporter 14 chiffres (ou laissez le champ vide).');
     }
+    if ($siret !== '' && !siret_valide($siret) && $siret !== (string)($ancien['siret'] ?? '')) {
+        $err("Ce SIRET n'existe pas (sa clé de contrôle est fausse) : un chiffre a sans doute été mal lu. Corrigez-le ou videz le champ.");
+    }
     $montant_tva = trim((string)($_POST['montant_tva'] ?? '')) === '' || $cat === 'km' ? null : parse_montant($_POST['montant_tva']);
     if ($montant_tva !== null && ($montant_tva < 0 || $montant_tva >= $montant)) {
         $err('Le montant de TVA doit être inférieur au montant TTC.');
@@ -1136,6 +1139,10 @@ case 'commercant_save':
         flash('Le SIRET doit comporter 14 chiffres (ou laissez le champ vide).', 'erreur');
         redirect($retour);
     }
+    if ($siret && !siret_valide($siret)) {
+        flash("Ce SIRET n'existe pas (sa clé de contrôle est fausse) : vérifiez les chiffres.", 'erreur');
+        redirect($retour);
+    }
     if ($siret && ($autre = q1('SELECT id, nom FROM {commercants} WHERE siret = ? AND id <> ?', [$siret, $id]))) {
         flash('Ce SIRET est déjà celui de « ' . $autre['nom'] . ' ».', 'erreur');
         redirect($retour);
@@ -1153,6 +1160,21 @@ case 'commercant_save':
     }
     flash('Commerçant « ' . $nom . ' » enregistré.');
     redirect(url('commercants'));
+
+/* Commerçant d'un SIRET (lu sur le ticket ou tapé) : carnet, sinon annuaire des entreprises */
+case 'siret_info':
+    require_login();
+    $siret = preg_replace('/\D/', '', (string)($_GET['siret'] ?? ''));
+    if (!siret_valide($siret)) {
+        json_out(['ok' => false, 'error' => 'SIRET invalide.'], 400);
+    }
+    try {
+        [$c, $source, $erreur] = commercant_pour_siret($siret);
+    } catch (Throwable $e) {
+        error_log('Tonton annuaire : ' . $e->getMessage());
+        [$c, $source, $erreur] = [null, 'annuaire', 'erreur interne'];
+    }
+    json_out(['ok' => true, 'commercant' => $c, 'source' => $source, 'erreur' => $erreur]);
 
 case 'commercant_suppr':
     post_only();

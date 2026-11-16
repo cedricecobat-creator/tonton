@@ -101,16 +101,40 @@
       appliquerCommercant(c, false);
     });
   }
+  // Commerçant d'un SIRET : carnet du téléphone, sinon serveur (carnet complet, puis annuaire des entreprises)
+  var siretsDemandes = {};
+  function commercantDuSiret(s) {
+    var c = commercants.filter(function (x) { return x.s === s; })[0];
+    if (c) return Promise.resolve({ commercant: c, source: 'carnet' });
+    if (siretsDemandes[s]) return siretsDemandes[s];
+    siretsDemandes[s] = fetch('index.php?p=siret_info&siret=' + s, { headers: { 'X-Requested-With': 'fetch' }, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok && j.commercant) commercants.push(j.commercant);
+        return j && j.ok ? j : { commercant: null };
+      })
+      .catch(function () { return { commercant: null }; });
+    return siretsDemandes[s];
+  }
+
   // SIRET tapé : charge le commerçant correspondant
   var champSiret = $('[name=siret]');
-  if (champSiret && commercants.length) {
+  var aideSiret = document.getElementById('aide-siret');
+  if (champSiret) {
     champSiret.addEventListener('input', function () {
       var s = champSiret.value.replace(/\D/g, '');
-      if (s.length !== 14) return;
-      var c = commercants.filter(function (x) { return x.s === s; })[0];
-      if (!c) return;
-      if (champLieu && !champLieu.value.trim()) remplir('lieu', c.n);
-      appliquerCommercant(c, false);
+      var valide = s.length === 14 && window.NDF && window.NDF.siretValide ? window.NDF.siretValide(s) : true;
+      if (aideSiret) {
+        aideSiret.hidden = s.length !== 14 || valide;
+      }
+      if (s.length !== 14 || !valide) return;
+      commercantDuSiret(s).then(function (j) {
+        var c = j.commercant;
+        if (!c || champSiret.value.replace(/\D/g, '') !== s) return;
+        if (champLieu && !champLieu.value.trim()) remplir('lieu', c.n);
+        appliquerCommercant(c, false);
+        if (j.source === 'annuaire') message('Commerçant trouvé dans l\'annuaire des entreprises : ' + c.n + '. Vérifiez le nom.', 'ok');
+      });
     });
   }
 
@@ -459,6 +483,34 @@
         }
       };
       msg();
+      // SIRET lu mais commerçant inconnu du carnet : annuaire des entreprises (via le serveur).
+      // SIRET mal lu (clé fausse) : on essaie les corrections d'un chiffre, gardées seulement si l'annuaire les confirme.
+      var aTester = infos.siret ? [infos.siret] : (infos.siretsDouteux || []);
+      if (aTester.length && !(infos.commercant && infos.commercant.par === 'siret')) {
+        (function essayer(i) {
+          if (i >= aTester.length) return;
+          commercantDuSiret(aTester[i]).then(function (j) {
+            var c = j.commercant;
+            // SIRET corrigé : confirmé seulement si la ville de l'établissement figure sur le ticket
+            var texteLu = ' ' + window.NDF.cleNom(res.data.text || '') + ' ';
+            if (c && !infos.siret && !(c.v && texteLu.indexOf(' ' + window.NDF.cleNom(c.v) + ' ') >= 0)) c = null;
+            if (!c) { essayer(i + 1); return; }
+            var champ = $('[name=siret]');
+            if (!infos.siret && champ && !touche.siret && !champ.value.trim()) {
+              remplir('siret', aTester[i]);
+              var det = form.querySelector('.details-compta');
+              if (det) det.open = true;
+            }
+            // le nom reconnu dans le carnet reste prioritaire ; l'annuaire complète
+            appliquerCommercant(c, !infos.commercant);
+            if (!infos.commercant) {
+              trouve.unshift('commerçant ' + c.n + (j.source === 'annuaire' ? ' (annuaire des entreprises, nom à vérifier)' : ' (par son SIRET)')
+                + (infos.siret ? '' : ', SIRET corrigé'));
+              msg();
+            }
+          });
+        })(0);
+      }
       // 2e lecture en « texte épars » : trouve les mots isolés (annotations à la main
       // dans une marge), que la lecture normale du ticket laisse souvent de côté.
       return obtenirWorker().then(function (w) {

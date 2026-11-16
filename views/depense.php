@@ -171,7 +171,8 @@ $alerte = $id && alerte_facture($dep);
     <details class="details-compta" <?= ($dep['siret'] ?? '') !== '' || ($dep['montant_tva'] ?? null) !== null ? 'open' : '' ?>>
       <summary>Informations pour la comptabilité <span class="muted">(facultatif, lues sur le ticket si possible)</span></summary>
       <div class="grille-compta">
-        <label>SIRET du commerçant<input name="siret" inputmode="numeric" maxlength="17" placeholder="14 chiffres" value="<?= h($dep['siret'] ?? '') ?>"></label>
+        <label>SIRET du commerçant<input name="siret" inputmode="numeric" maxlength="17" placeholder="14 chiffres" value="<?= h($dep['siret'] ?? '') ?>">
+          <span class="aide alerte-texte" id="aide-siret" hidden>Ce SIRET n'existe pas : un chiffre est sans doute mal lu.</span></label>
         <label>Montant de TVA
           <span class="champ-euro"><input name="montant_tva" inputmode="decimal" autocomplete="off" placeholder="0,00"
             value="<?= ($dep['montant_tva'] ?? null) !== null ? h(nombre_fr($dep['montant_tva'])) : '' ?>"></span>

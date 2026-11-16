@@ -210,13 +210,29 @@
     return null;
   }
 
-  // SIRET : 14 chiffres (souvent groupés « 123 456 789 00012 »), de préférence après « SIRET »
+  // Clé de contrôle du SIRET (Luhn) ; La Poste (SIREN 356000000) : somme des chiffres multiple de 5
+  function siretValide(s) {
+    if (!/^\d{14}$/.test(s)) return false;
+    var i, t = 0;
+    if (s.indexOf('356000000') === 0) {
+      for (i = 0; i < 14; i++) t += +s[i];
+      return t % 5 === 0;
+    }
+    for (i = 0; i < 14; i++) {
+      var d = +s[13 - i] * (i % 2 ? 2 : 1);
+      t += d > 9 ? d - 9 : d;
+    }
+    return t % 10 === 0;
+  }
+
+  // SIRET : 14 chiffres (souvent groupés « 123 456 789 00012 »), de préférence après « SIRET ».
+  // Un numéro dont la clé de contrôle est fausse (chiffre mal lu) est écarté.
   function trouverSiret(texte) {
     var t = texte.replace(/[oO](?=\d)/g, '0');
     var re = /(\d[\d .]{12,20}\d)/g, m, cands = [];
     while ((m = re.exec(t))) {
       var chiffres = m[1].replace(/\D/g, '');
-      if (chiffres.length === 14) {
+      if (chiffres.length === 14 && siretValide(chiffres)) {
         var avant = t.slice(Math.max(0, m.index - 20), m.index).toLowerCase();
         cands.push({ v: chiffres, bonus: /siret|siren|rcs/.test(avant) ? 1 : 0 });
       }
@@ -224,6 +240,26 @@
     // Les numéros de téléphone (10 chiffres) et de carte ne font pas 14 chiffres groupés ainsi
     cands.sort(function (a, b) { return b.bonus - a.bonus; });
     return cands.length && (cands[0].bonus || cands.length === 1) ? cands[0].v : null;
+  }
+
+  // SIRET mal lu (clé fausse) : variantes obtenues en corrigeant UN chiffre souvent confondu
+  // par la lecture (0/6/8, 1/7, 3/8, 5/6…). Elles restent à confirmer par l'annuaire des entreprises.
+  var CONFUSIONS = { '0': '689', '6': '058', '8': '0369', '3': '8', '9': '08', '1': '7', '7': '1', '5': '6', '2': '7' };
+  function siretsDouteux(texte) {
+    var t = texte.replace(/[oO](?=\d)/g, '0');
+    var re = /(\d[\d .]{12,20}\d)/g, m, out = [];
+    while ((m = re.exec(t))) {
+      var ch = m[1].replace(/\D/g, '');
+      var avant = t.slice(Math.max(0, m.index - 20), m.index).toLowerCase();
+      if (ch.length !== 14 || siretValide(ch) || !/siret|siren|rcs/.test(avant)) continue;
+      for (var i = 0; i < 14; i++) {
+        (CONFUSIONS[ch[i]] || '').split('').forEach(function (c) {
+          var v = ch.slice(0, i) + c + ch.slice(i + 1);
+          if (siretValide(v) && out.indexOf(v) < 0) out.push(v);
+        });
+      }
+    }
+    return out.slice(0, 4);
   }
 
   // Montant total de TVA : ligne « total TVA », sinon somme des lignes de TVA par taux
@@ -332,18 +368,19 @@
     var siret = trouverSiret(texte);
     return {
       date: trouverDate(texte, aujourdhui), montant: montant, lieu: lieu,
-      ville: trouverVille(texte, lieu), siret: siret, tva: trouverTva(texte, montant),
+      ville: trouverVille(texte, lieu), siret: siret, siretsDouteux: siret ? [] : siretsDouteux(texte), tva: trouverTva(texte, montant),
       annotations: trouverAnnotations(texte, options.initiales || [], !!options.minuscules),
       commercant: options.commercants ? trouverCommercant(texte, options.commercants, siret) : null
     };
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { analyserTicket: analyserTicket, trouverCommercant: trouverCommercant, cleNom: cleNom };
+    module.exports = { analyserTicket: analyserTicket, trouverCommercant: trouverCommercant, cleNom: cleNom, siretValide: siretValide };
   } else {
     racine.NDF = racine.NDF || {};
     racine.NDF.analyserTicket = analyserTicket;
     racine.NDF.trouverCommercant = trouverCommercant;
     racine.NDF.cleNom = cleNom;
+    racine.NDF.siretValide = siretValide;
   }
 })(this);

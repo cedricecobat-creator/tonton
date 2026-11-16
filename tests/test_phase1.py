@@ -392,7 +392,7 @@ def php_json(expr):
     return json.loads(out.stdout or 'null')
 
 
-SIRET_T = '12345678900012'
+SIRET_T = '12345678900015'
 def com_siret():
     return php_json(f"q1('SELECT * FROM {{commercants}} WHERE siret = ?', ['{SIRET_T}'])")
 
@@ -400,7 +400,7 @@ def com_siret():
 c = php_json("q1(\"SELECT * FROM {commercants} WHERE cle = 'BRASSERIE TARDIVE'\")")
 check(c and c['ville'] == 'BAYONNE' and int(c['nb']) >= 1 and c['categorie'] == 'repas', "carnet : commerçant appris à l'enregistrement d'un ticket")
 r = ajout(fabien, d + '06', 'carburant', 61.30, 'cb_pro', [], 'STATION TOTAL', 'ANGLET', objet='Carburant véhicule', midi=False,
-          extra={'siret': '123 456 789 00012'})
+          extra={'siret': '123 456 789 00015'})
 c = com_siret()
 check(r['ok'] and c and c['nom'] == 'STATION TOTAL' and c['categorie'] == 'carburant' and c['objet'] == 'Carburant véhicule',
       'carnet : SIRET, catégorie et nature retenus')
@@ -430,7 +430,7 @@ check(c['nom'] == 'Total Énergies Anglet' and c['objet'] == 'Carburant' and int
 r = admin.post(B + '?p=commercant_save', data={'csrf': admin.csrf, 'id': 0, 'nom': 'Doublon', 'ville': '', 'siret': SIRET_T, 'categorie': '', 'objet': ''})
 check('déjà celui de' in r.text, 'admin : SIRET déjà utilisé refusé')
 r = admin.post(B + '?p=commercant_save', data={'csrf': admin.csrf, 'id': 0, 'nom': 'Boulangerie Etcheverry', 'ville': 'USTARITZ',
-                                               'siret': '98765432100019', 'categorie': 'repas', 'objet': 'Déjeuner'})
+                                               'siret': '98765432100015', 'categorie': 'repas', 'objet': 'Déjeuner'})
 check('Boulangerie Etcheverry' in r.text, 'admin : commerçant ajouté à la main')
 r = admin.post(B + '?p=commercant_save', data={'csrf': admin.csrf, 'id': 0, 'nom': 'X', 'ville': '', 'siret': '123', 'categorie': '', 'objet': ''})
 check('14 chiffres' in r.text, 'admin : SIRET incomplet refusé')
@@ -438,6 +438,28 @@ r = admin.post(B + '?p=commercant_suppr', data={'csrf': admin.csrf, 'id': cid})
 check('supprimé du carnet' in r.text and com_siret() is None, 'admin : commerçant supprimé')
 n_dep = php_json(f"q1('SELECT COUNT(*) n FROM {{depenses}} WHERE siret = ?', ['{SIRET_T}'])")['n']
 check(int(n_dep) == 3, 'suppression du commerçant : les tickets ne sont pas touchés')
+# SIRET : clé de contrôle et annuaire des entreprises
+r = ajout(fabien, d + '09', 'carburant', 33.30, 'cb_pro', [], 'STATION', 'PAU', midi=False, extra={'siret': '12345678900012'})
+check(not r['ok'] and "n'existe pas" in r.get('error', ''), 'ticket : SIRET mal lu (clé de contrôle fausse) refusé')
+r = admin.post(B + '?p=commercant_save', data={'csrf': admin.csrf, 'id': 0, 'nom': 'Faux', 'ville': '', 'siret': '12345678900012', 'categorie': '', 'objet': ''})
+check('existe pas' in r.text, 'admin : SIRET à clé fausse refusé')
+j = fabien.get(B, params={'p': 'siret_info', 'siret': '98765432100015'}).json()
+check(j['ok'] and j['source'] == 'carnet' and j['commercant']['n'] == 'Boulangerie Etcheverry', 'SIRET connu : commerçant pris dans le carnet (sans appel extérieur)')
+check(fabien.get(B, params={'p': 'siret_info', 'siret': '12345678900012'}).status_code == 400, 'SIRET invalide refusé par la recherche')
+j = fabien.get(B, params={'p': 'siret_info', 'siret': '13002526500013'}).json()
+if j.get('erreur'):
+    print('SKIP annuaire des entreprises injoignable depuis ce poste :', j['erreur'])
+else:
+    c = php_json("q1(\"SELECT * FROM {commercants} WHERE siret = '13002526500013'\")")
+    check(j['source'] == 'annuaire' and j['commercant'] and 'NUMERIQUE' in j['commercant']['n'] and j['commercant']['v'] == 'PARIS' and c and int(c['nb']) == 0,
+          f"SIRET inconnu : nom et ville trouvés dans l'annuaire des entreprises et ajoutés au carnet ({j['commercant']})")
+    j = fabien.get(B, params={'p': 'siret_info', 'siret': '13002526500013'}).json()
+    check(j['source'] == 'carnet', "annuaire interrogé une seule fois (ensuite : carnet)")
+h = admin.get(B, params={'p': 'diagnostic', 'annuaire': 1}).text
+check('Annuaire des entreprises' in h, "diagnostic : test de l'annuaire des entreprises")
+check(php_json("[categorie_de_naf('56.10A'), categorie_de_naf('47.30Z'), categorie_de_naf('52.21Z'), categorie_de_naf('47.11F')]") == ['repas', 'carburant', 'peage', None],
+      "catégorie déduite de l'activité (restauration, station-service, autoroute/parking)")
+
 n = php_json("(function () { q('DELETE FROM {commercants}'); commercants_initialiser(); return q1('SELECT COUNT(*) n FROM {commercants}')['n']; })()")
 c = com_siret()
 check(int(n) >= 5 and c and int(c['nb']) == 3, f'mise à niveau : carnet reconstitué à partir des tickets existants ({n} commerçants)')

@@ -20,3 +20,5 @@
   </tbody>
 </table>
 </div>
+<p class="petit"><a href="<?= h(url('diagnostic', ['annuaire' => 1])) ?>">Tester l'annuaire des entreprises</a>
+  <span class="muted">(recherche d'un établissement public de test : vérifie que l'hébergement peut interroger l'annuaire pour reconnaître les commerçants par leur SIRET)</span></p>
