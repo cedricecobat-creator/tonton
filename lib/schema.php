@@ -9,7 +9,7 @@ declare(strict_types=1);
  * l'étape correspondante dans maj_schema(). La mise à niveau est faite
  * automatiquement à la première visite après le dépôt d'une nouvelle version.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const ROLES = [
     'admin'   => 'Administrateur',
@@ -88,6 +88,23 @@ function schema_sql(): array
             KEY ix_date (date_depense),
             KEY ix_user (user_id),
             CONSTRAINT {fk}_dep_user FOREIGN KEY (user_id) REFERENCES {users}(id)
+        ) $opt",
+
+        "CREATE TABLE IF NOT EXISTS {commercants} (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            nom VARCHAR(255) NOT NULL,
+            cle VARCHAR(255) NOT NULL,
+            ville VARCHAR(120) NOT NULL DEFAULT '',
+            siret CHAR(14) NULL,
+            categorie VARCHAR(12) NULL,
+            objet VARCHAR(255) NOT NULL DEFAULT '',
+            nb INT UNSIGNED NOT NULL DEFAULT 0,
+            dernier DATE NULL,
+            manuel TINYINT(1) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            UNIQUE KEY ux_siret (siret),
+            KEY ix_cle (cle)
         ) $opt",
 
         "CREATE TABLE IF NOT EXISTS {absences} (
@@ -278,7 +295,11 @@ function maj_schema(): void
         if (!colonne_existe($table, 'regul_annee')) {
             q("ALTER TABLE {{$table}} ADD regul_annee SMALLINT UNSIGNED NULL, ADD regul_mois TINYINT UNSIGNED NULL");
         }
+    }    // Version 3 : carnet des commerçants, rempli au départ avec les tickets déjà enregistrés
+    if (schema_version_installee() < 3 && !(int)q1('SELECT COUNT(*) n FROM {commercants}')['n']) {
+        commercants_initialiser();
     }
+
     if (!(int)q1('SELECT COUNT(*) n FROM {membres}')['n']) {
         foreach (MEMBRES_INITIAUX as $i => [$prenom, $ini]) {
             q('INSERT INTO {membres} (prenom, initiales, ordre, actif) VALUES (?, ?, ?, 1)', [$prenom, $ini, ($i + 1) * 10]);

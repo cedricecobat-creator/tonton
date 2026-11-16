@@ -385,8 +385,65 @@ s = session('jeremy@test.local', 'salarie12345', attendu=False)
 check('pas encore ouvert' in s.derniere.text and 'barre-compte' not in s.derniere.text, 'compte salarié : connexion refusée tant que le module est désactivé')
 check(fabien.get(B, params={'p': 'fiche_rh'}).url.endswith('p=accueil'), 'pages salariés fermées (redirection)')
 
+# ---------------------------------------------------------------- carnet des commerçants
+def php_json(expr):
+    code = "$_SERVER['SCRIPT_NAME']='/index.php'; require 'lib/bootstrap.php'; echo json_encode(" + expr + ");"
+    out = subprocess.run([PHP, '-r', code], cwd=os.path.dirname(ICI), env=env, capture_output=True, text=True, encoding='utf-8')
+    return json.loads(out.stdout or 'null')
+
+
+SIRET_T = '12345678900012'
+def com_siret():
+    return php_json(f"q1('SELECT * FROM {{commercants}} WHERE siret = ?', ['{SIRET_T}'])")
+
+
+c = php_json("q1(\"SELECT * FROM {commercants} WHERE cle = 'BRASSERIE TARDIVE'\")")
+check(c and c['ville'] == 'BAYONNE' and int(c['nb']) >= 1 and c['categorie'] == 'repas', "carnet : commerçant appris à l'enregistrement d'un ticket")
+r = ajout(fabien, d + '06', 'carburant', 61.30, 'cb_pro', [], 'STATION TOTAL', 'ANGLET', objet='Carburant véhicule', midi=False,
+          extra={'siret': '123 456 789 00012'})
+c = com_siret()
+check(r['ok'] and c and c['nom'] == 'STATION TOTAL' and c['categorie'] == 'carburant' and c['objet'] == 'Carburant véhicule',
+      'carnet : SIRET, catégorie et nature retenus')
+r = ajout(david, d + '06', 'carburant', 55.10, 'cb_pro', [], 'Station Total Anglet', 'ANGLET', midi=False, extra={'siret': SIRET_T})
+c = com_siret()
+n_siret = php_json(f"q1('SELECT COUNT(*) n FROM {{commercants}} WHERE siret = ? OR cle LIKE ?', ['{SIRET_T}', '%STATION TOTAL%'])")['n']
+check(r['ok'] and int(c['nb']) == 2 and c['nom'] == 'Station Total Anglet' and int(n_siret) == 1 and c['objet'] == 'Carburant véhicule',
+      'carnet : même SIRET → même commerçant, nom corrigé retenu, nature habituelle gardée')
+h = fabien.get(B, params={'p': 'depense'}).text
+check('data-commercants=' in h and 'Station Total Anglet' in h and 'id="liste-commercants"' in h and SIRET_T in h,
+      'saisie : carnet transmis au formulaire (reconnaissance et liste de choix)')
+r = fabien.get(B, params={'p': 'commercants'})
+check('Commerçants</h1>' not in r.text, 'carnet : page réservée à l\'administrateur')
+r = admin.get(B, params={'p': 'commercants', 'q': 'total'})
+check('Station Total Anglet' in r.text and 'BRASSERIE TARDIVE' not in r.text, 'admin : recherche dans le carnet')
+r = admin.get(B, params={'p': 'commercants', 'q': '789 000'})
+check('Station Total Anglet' in r.text, 'admin : recherche par SIRET')
+cid = int(c['id'])
+r = admin.post(B + '?p=commercant_save', data={'csrf': admin.csrf, 'id': cid, 'nom': 'Total Énergies Anglet', 'ville': 'ANGLET',
+                                               'siret': SIRET_T, 'categorie': 'carburant', 'objet': 'Carburant'})
+c = com_siret()
+check(c['nom'] == 'Total Énergies Anglet' and int(c['manuel']) == 1, 'admin : commerçant modifié à la main')
+ajout(fabien, d + '07', 'carburant', 40.20, 'cb_pro', [], 'TOTAL', 'ANGLET', midi=False, extra={'siret': SIRET_T})
+c = com_siret()
+check(c['nom'] == 'Total Énergies Anglet' and c['objet'] == 'Carburant' and int(c['nb']) == 3,
+      'carnet : une fiche modifiée à la main n\'est plus changée par les tickets (compteur seulement)')
+r = admin.post(B + '?p=commercant_save', data={'csrf': admin.csrf, 'id': 0, 'nom': 'Doublon', 'ville': '', 'siret': SIRET_T, 'categorie': '', 'objet': ''})
+check('déjà celui de' in r.text, 'admin : SIRET déjà utilisé refusé')
+r = admin.post(B + '?p=commercant_save', data={'csrf': admin.csrf, 'id': 0, 'nom': 'Boulangerie Etcheverry', 'ville': 'USTARITZ',
+                                               'siret': '98765432100019', 'categorie': 'repas', 'objet': 'Déjeuner'})
+check('Boulangerie Etcheverry' in r.text, 'admin : commerçant ajouté à la main')
+r = admin.post(B + '?p=commercant_save', data={'csrf': admin.csrf, 'id': 0, 'nom': 'X', 'ville': '', 'siret': '123', 'categorie': '', 'objet': ''})
+check('14 chiffres' in r.text, 'admin : SIRET incomplet refusé')
+r = admin.post(B + '?p=commercant_suppr', data={'csrf': admin.csrf, 'id': cid})
+check('supprimé du carnet' in r.text and com_siret() is None, 'admin : commerçant supprimé')
+n_dep = php_json(f"q1('SELECT COUNT(*) n FROM {{depenses}} WHERE siret = ?', ['{SIRET_T}'])")['n']
+check(int(n_dep) == 3, 'suppression du commerçant : les tickets ne sont pas touchés')
+n = php_json("(function () { q('DELETE FROM {commercants}'); commercants_initialiser(); return q1('SELECT COUNT(*) n FROM {commercants}')['n']; })()")
+c = com_siret()
+check(int(n) >= 5 and c and int(c['nb']) == 3, f'mise à niveau : carnet reconstitué à partir des tickets existants ({n} commerçants)')
+
 # ---------------------------------------------------------------- pages admin
-for page in ['journal', 'diagnostic', 'utilisateurs', 'absences', 'compte']:
+for page in ['journal', 'diagnostic', 'utilisateurs', 'absences', 'compte', 'commercants', 'commercant']:
     r = admin.get(B, params={'p': page, 'a': 2026, 'm': 9})
     check(r.status_code == 200 and 'Fatal' not in r.text and 'Warning' not in r.text, f'admin : page « {page} »')
 check('Connexion' in admin.get(B, params={'p': 'journal'}).text, 'journal : connexions enregistrées')

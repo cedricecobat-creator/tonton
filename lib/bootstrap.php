@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 define('APP_ROOT', dirname(__DIR__));
-define('APP_VERSION', '1.5.0');
+define('APP_VERSION', '1.6.0');
 
 /**
  * Emplacement du fichier de configuration.
@@ -289,3 +289,4 @@ require __DIR__ . '/metier.php';
 require __DIR__ . '/mail.php';
 require __DIR__ . '/schema.php';
 require __DIR__ . '/regularisation.php';
+require __DIR__ . '/commercants.php';

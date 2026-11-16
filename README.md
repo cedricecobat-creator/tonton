@@ -7,6 +7,10 @@ Tonton gère les fiches à partir d'**octobre 2026** (réglage `premier_mois`) :
 traités avant Tonton et ne s'affichent pas ; un ticket ou un congé daté d'avant, saisi ensuite, est régularisé
 sur le premier mois ouvert (la prime repas de ce jour-là est présumée versée, l'admin peut décocher la déduction).
 
+Les commerçants habituels sont retenus dans un **carnet** (Admin > Commerçants) qui se remplit tout seul
+à chaque ticket : à la lecture d'un ticket, le commerçant est reconnu par son SIRET ou par son nom, et Tonton
+propose son nom, sa ville, la catégorie et la nature habituelles.
+
 Phase 1 (en cours) : administrateur + associés. L'espace salariés (phase 2) existe
 mais reste **désactivé** tant que `module_salaries` vaut `false` dans la configuration.
 

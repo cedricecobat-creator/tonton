@@ -265,21 +265,85 @@
     return v.toUpperCase();
   }
 
+  // Nom réduit pour comparer : majuscules, sans accents ni ponctuation (comme côté serveur)
+  function cleNom(s) {
+    return sansAccents(String(s || '').toUpperCase()).replace(/Œ/g, 'OE').replace(/Æ/g, 'AE')
+      .replace(/[^A-Z0-9]+/g, ' ').trim();
+  }
+
+  /*
+   * Commerçant du carnet présent sur le ticket.
+   * liste : [{ n: nom, v: ville, s: siret, c: catégorie, o: nature, k: nombre de tickets }]
+   * 1. le SIRET lu est l'index le plus sûr ;
+   * 2. sinon le nom est cherché dans le texte, en tolérant les erreurs de lecture
+   *    (aucune pour un nom de 4 lettres ou moins, 1 jusqu'à 8, puis 1 par 5 lettres, 3 au plus).
+   * Retourne { commercant, par: 'siret' | 'nom' } ou null.
+   */
+  var MOTS_TICKET = /^(TOTAL|TTC|HT|TVA|CB|CARTE|CARTE BANCAIRE|MERCI|TICKET|CAISSE|ESPECES|MONTANT|EUR|EUROS|VENTE|FACTURE|CLIENT|PAIEMENT|SANS CONTACT|DEBIT|CREDIT|A PAYER|RENDU|TABLE|SERVICE|BIENVENUE)$/;
+
+  function trouverCommercant(texte, liste, siret) {
+    if (!liste || !liste.length) return null;
+    var i;
+    if (siret) {
+      for (i = 0; i < liste.length; i++) {
+        if (liste[i].s && liste[i].s === siret) return { commercant: liste[i], par: 'siret' };
+      }
+    }
+    var lignes = String(texte || '').split(/\r?\n/).map(cleNom).filter(Boolean);
+    // le nom est en tête (ou en pied) de ticket : la recherche approchée se limite à ces lignes
+    var proches = lignes.slice(0, 12).concat(lignes.length > 18 ? lignes.slice(-6) : lignes.slice(12));
+    var tout = ' ' + lignes.join(' ') + ' ';
+    var meilleur = null;
+    liste.forEach(function (c) {
+      if (siret && c.s && c.s !== siret) return; // autre établissement
+      var cle = cleNom(c.n);
+      var lettres = cle.replace(/ /g, '').length;
+      if (lettres < 3 || MOTS_TICKET.test(cle)) return; // « TOTAL », « CARTE »… : reconnus par le SIRET seulement
+      var tol = lettres <= 4 ? 0 : (lettres <= 8 ? 1 : Math.min(3, Math.floor(lettres / 5)));
+      var best = tout.indexOf(' ' + cle + ' ') >= 0 ? 0 : Infinity;
+      if (best && tol) {
+        var nbMots = cle.split(' ').length;
+        proches.forEach(function (l) {
+          var w = l.split(' ');
+          for (var n = 1; n <= nbMots + 1; n++) {
+            for (var j = 0; j + n <= w.length; j++) {
+              var cand = w.slice(j, j + n).join(' ');
+              if (Math.abs(cand.length - cle.length) > tol) continue;
+              var d = distance(cand, cle);
+              if (d < best) best = d;
+            }
+          }
+        });
+      }
+      if (best > tol) return;
+      var villeLue = c.v && cleNom(c.v).length >= 2 && tout.indexOf(' ' + cleNom(c.v) + ' ') >= 0;
+      // le plus fidèle d'abord, puis le plus long (plus précis), la ville lue et l'habitude
+      var score = best / lettres - lettres / 1000 - (villeLue ? 0.05 : 0) - Math.min(c.k || 0, 100) / 100000;
+      if (!meilleur || score < meilleur.score) meilleur = { commercant: c, par: 'nom', score: score };
+    });
+    return meilleur ? { commercant: meilleur.commercant, par: 'nom' } : null;
+  }
+
   function analyserTicket(texte, aujourdhui, options) {
     texte = String(texte || '');
+    options = options || {};
     var montant = trouverMontant(texte);
     var lieu = trouverLieu(texte);
+    var siret = trouverSiret(texte);
     return {
       date: trouverDate(texte, aujourdhui), montant: montant, lieu: lieu,
-      ville: trouverVille(texte, lieu), siret: trouverSiret(texte), tva: trouverTva(texte, montant),
-      annotations: trouverAnnotations(texte, (options && options.initiales) || [], !!(options && options.minuscules))
+      ville: trouverVille(texte, lieu), siret: siret, tva: trouverTva(texte, montant),
+      annotations: trouverAnnotations(texte, options.initiales || [], !!options.minuscules),
+      commercant: options.commercants ? trouverCommercant(texte, options.commercants, siret) : null
     };
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { analyserTicket: analyserTicket };
+    module.exports = { analyserTicket: analyserTicket, trouverCommercant: trouverCommercant, cleNom: cleNom };
   } else {
     racine.NDF = racine.NDF || {};
     racine.NDF.analyserTicket = analyserTicket;
+    racine.NDF.trouverCommercant = trouverCommercant;
+    racine.NDF.cleNom = cleNom;
   }
 })(this);

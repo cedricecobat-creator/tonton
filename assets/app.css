@@ -164,7 +164,7 @@ pre { background: #f6f7f9; border: 1px solid var(--ligne); padding: .6rem .8rem;
 .form fieldset[disabled] { opacity: .85; }
 label { display: block; font-size: .9rem; font-weight: 500; }
 label > input, label > select, label > .champ-euro { margin-top: .3rem; }
-input[type=text], input[type=email], input[type=password], input[type=date], input:not([type]), select {
+input[type=text], input[type=email], input[type=password], input[type=date], input[type=search], input:not([type]), select {
   width: 100%; font: inherit; font-size: 16px; padding: .65rem .75rem; border: 1px solid #cfd4da; border-radius: 10px;
   background: #fff; color: var(--encre); -webkit-appearance: none; appearance: none; min-height: 46px;
 }
@@ -440,3 +440,7 @@ input[type=date] { min-width: 0; max-width: 100%; }
 .regul-ajout .form { margin-top: .6rem; }
 .regul-ajout .grille-2, .regul-ajout .choix-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .badge-regul { background: #f1eafe; color: #5b21b6; }
+
+/* Carnet des commerçants */
+.form-recherche { display: flex; gap: .5rem; margin: .8rem 0 .4rem; }
+.form-recherche input { flex: 1; min-width: 0; }

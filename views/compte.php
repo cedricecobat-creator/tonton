@@ -9,6 +9,7 @@
   <h2 class="titre-section">Outils</h2>
   <a class="carte-lien" href="<?= h(url('utilisateurs')) ?>"><span><strong>Utilisateurs et membres</strong><br><span class="petit muted">Comptes, rôles, barème km, liste des participants aux repas</span></span><span aria-hidden="true">›</span></a>
   <a class="carte-lien" href="<?= h(url('absences')) ?>"><span><strong>Congés et formations</strong><br><span class="petit muted">Calendrier et import du fichier Odoo</span></span><span aria-hidden="true">›</span></a>
+  <a class="carte-lien" href="<?= h(url('commercants')) ?>"><span><strong>Commerçants</strong><br><span class="petit muted">Carnet utilisé pour reconnaître les tickets (nom, ville, SIRET)</span></span><span aria-hidden="true">›</span></a>
   <a class="carte-lien" href="<?= h(url('journal')) ?>"><span><strong>Journal</strong><br><span class="petit muted">Historique des actions</span></span><span aria-hidden="true">›</span></a>
   <a class="carte-lien" href="<?= h(url('diagnostic')) ?>"><span><strong>Diagnostic</strong><br><span class="petit muted">Vérification de l'hébergement et de la configuration</span></span><span aria-hidden="true">›</span></a>
 </section>

@@ -32,7 +32,8 @@ $alerte = $id && alerte_facture($dep);
   </p>
 <?php endif; ?>
 
-<form id="form-depense" class="form" method="post" action="<?= h(url('depense_save')) ?>" enctype="multipart/form-data" novalidate>
+<form id="form-depense" class="form" method="post" action="<?= h(url('depense_save')) ?>" enctype="multipart/form-data" novalidate
+  data-commercants="<?= h(json_encode($commercants ?? [], JSON_UNESCAPED_UNICODE)) ?>">
   <?= csrf_field() ?>
   <input type="hidden" name="id" value="<?= $id ?>"><?= champs_retour() ?>
   <input type="hidden" name="confirm_doublon" value="">
@@ -144,7 +145,7 @@ $alerte = $id && alerte_facture($dep);
   </div>
 
   <div class="grille-2" data-si-pas-km>
-    <label>Commerçant <span class="obligatoire">*</span><input name="lieu" maxlength="255" placeholder="Ex. : Brasserie Le Berry" value="<?= h($dep['lieu']) ?>"></label>
+    <label>Commerçant <span class="obligatoire">*</span><input name="lieu" maxlength="255" placeholder="Ex. : Brasserie Le Berry" value="<?= h($dep['lieu']) ?>" list="liste-commercants" autocomplete="off"></label>
     <label>Ville <span class="obligatoire">*</span><input name="ville" maxlength="120" placeholder="Ex. : Pau" value="<?= h($dep['ville'] ?? '') ?>"></label>
   </div>
   <label data-si-km hidden>Trajet<input name="lieu_km" maxlength="255" placeholder="Ex. : Bayonne - Pau aller-retour" value="<?= $dep['categorie'] === 'km' ? h($dep['lieu']) : '' ?>"></label>
@@ -178,6 +179,12 @@ $alerte = $id && alerte_facture($dep);
       </div>
     </details>
   </div>
+
+  <?php if (!empty($commercants)): ?>
+  <datalist id="liste-commercants">
+    <?php foreach ($commercants as $cm): ?><option value="<?= h($cm['n']) ?>"><?= h($cm['v']) ?></option><?php endforeach; ?>
+  </datalist>
+  <?php endif; ?>
 
   <?php if ($modifiable): ?>
     <p class="alerte alerte-erreur" id="form-erreur" hidden></p>

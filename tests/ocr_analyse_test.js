@@ -34,5 +34,33 @@ ok(a.initiales.join() === 'DP,FC', 'initiales en minuscules acceptées sur la 2e
 a = o.analyserTicket('LG TO CB', AUJ, { initiales: ini }).annotations;
 ok(a.initiales.length === 0, 'seules les initiales des membres comptent');
 
+// Carnet des commerçants
+var carnet = [
+  { n: 'Brasserie du Port', v: 'BAYONNE', s: '', c: 'repas', o: '', k: 12 },
+  { n: 'Brasserie du Port', v: 'ANGLET', s: '', c: 'repas', o: '', k: 2 },
+  { n: 'Total Énergies Anglet', v: 'ANGLET', s: '12345678900012', c: 'carburant', o: 'Carburant', k: 8 },
+  { n: 'Leclerc', v: 'BAYONNE', s: '', c: 'autres', o: '', k: 5 },
+  { n: 'BP', v: 'PAU', s: '', c: 'carburant', o: '', k: 3 }
+];
+var tc = o.trouverCommercant;
+var res = tc('STATION XYZ\nSIRET 123 456 789 00012\nTOTAL 50,00', carnet, '12345678900012');
+ok(res && res.par === 'siret' && res.commercant.n === 'Total Énergies Anglet', 'commerçant reconnu par son SIRET');
+res = tc('BRASSERIE DU P0RT\n12 quai Galuperie\n64100 BAYONNE\nTOTAL 24,00', carnet, null);
+ok(res && res.commercant.n === 'Brasserie du Port' && res.commercant.v === 'BAYONNE', 'nom mal lu (P0RT) + ville lue → bon établissement');
+res = tc('BRASSERIEDUPORT\nANGLET\nTOTAL 24,00', carnet, null);
+ok(res && res.commercant.v === 'ANGLET', 'nom collé, ville Anglet');
+res = tc('E.LECLERC\nBAYONNE\nTOTAL 12,00', carnet, null);
+ok(res && res.commercant.n === 'Leclerc', 'Leclerc dans « E.LECLERC »');
+res = tc('BOULANGERIE MARTIN\nTOTAL 5,00\nBPX', carnet, null);
+ok(res === null, 'nom court (BP) : seulement à l\'identique, pas de fausse reconnaissance');
+res = tc('STATION XYZ\nSIRET 999 888 777 00011', carnet, '99988877700011');
+ok(res === null, 'SIRET inconnu et nom absent : rien');
+res = tc('TOTAL ENERGIES ANGLET\nSIRET 999 888 777 00011', carnet, '99988877700011');
+ok(res === null, 'même nom mais autre SIRET : autre établissement, pas reconnu');
+res = tc('BRASSERIE XYZ\nTOTAL 24,00\nCARTE', [{ n: 'TOTAL', v: '', s: '11122233300044', c: 'carburant', o: '', k: 9 }], null);
+ok(res === null, 'commerçant nommé « TOTAL » : pas reconnu sur le mot TOTAL du ticket');
+var inf = o.analyserTicket('BRASSERIE DU PORT\n64100 BAYONNE\n13/10/2026\nTOTAL 24,00', AUJ, { commercants: carnet });
+ok(inf.commercant && inf.commercant.commercant.v === 'BAYONNE', 'analyserTicket renvoie le commerçant reconnu');
+
 console.log(erreurs ? '\n' + erreurs + ' erreur(s)' : '\nRÉSULTAT : tout est OK');
 process.exit(erreurs ? 1 : 0);

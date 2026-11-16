@@ -55,8 +55,64 @@
   // moyen de paiement et participants choisis à la main : les annotations lues ne les changent pas
   touche.paiement = !nouveau;
   touche.participants = !nouveau;
+  // catégorie et nature choisies à la main : le carnet des commerçants ne les change pas
+  touche.categorie = !nouveau;
+  touche.objet = !nouveau;
+  $$('input[name=categorie]').forEach(function (r) { r.addEventListener('change', function (e) { if (e.isTrusted) touche.categorie = true; }); });
+  var champObjet = $('[name=objet]');
+  if (champObjet) champObjet.addEventListener('input', function () { touche.objet = true; });
   $$('input[name=paiement]').forEach(function (r) { r.addEventListener('change', function (e) { if (e.isTrusted) touche.paiement = true; }); });
   $$('input[name="participants[]"]').forEach(function (r) { r.addEventListener('change', function (e) { if (e.isTrusted) touche.participants = true; }); });
+
+  /* ---------- Carnet des commerçants ---------- */
+  var commercants = [];
+  var categorieDuCarnet = false; // catégorie habituelle du commerçant : les annotations ne la changent pas
+  try { commercants = JSON.parse(form.getAttribute('data-commercants') || '[]'); } catch (e) { commercants = []; }
+
+  // Propose ce que l'on sait du commerçant, sans écraser ce que la personne a saisi.
+  // depuisLecture : reconnu sur la photo (le nom du carnet remplace alors le nom lu, souvent imparfait)
+  function appliquerCommercant(c, depuisLecture) {
+    if (depuisLecture && !touche.lieu) remplir('lieu', c.n);
+    var v = $('[name=ville]');
+    if (c.v && v && (!touche.ville || !v.value.trim())) remplir('ville', c.v);
+    var s = $('[name=siret]');
+    if (c.s && s && !s.value.trim()) remplir('siret', c.s);
+    if (c.c && c.c !== 'km' && !touche.categorie) {
+      var r = $('input[name=categorie][value=' + c.c + ']');
+      if (r && !r.checked) { r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }
+      categorieDuCarnet = !!r;
+    }
+    var o = $('[name=objet]');
+    if (c.o && o && !touche.objet && !o.value.trim()) remplir('objet', c.o);
+  }
+
+  // Choix dans la liste (ou nom tapé en entier) : ville, catégorie, nature habituelles
+  var champLieu = $('[name=lieu]');
+  var dernierChoisi = '';
+  if (champLieu && commercants.length && window.NDF && window.NDF.cleNom) {
+    champLieu.addEventListener('input', function () {
+      var cle = window.NDF.cleNom(champLieu.value);
+      if (!cle || cle === dernierChoisi) return;
+      var memes = commercants.filter(function (c) { return window.NDF.cleNom(c.n) === cle; });
+      if (!memes.length) return;
+      var villeSaisie = window.NDF.cleNom(($('[name=ville]') || {}).value || '');
+      var c = memes.filter(function (x) { return villeSaisie && window.NDF.cleNom(x.v) === villeSaisie; })[0] || memes[0];
+      dernierChoisi = cle;
+      appliquerCommercant(c, false);
+    });
+  }
+  // SIRET tapé : charge le commerçant correspondant
+  var champSiret = $('[name=siret]');
+  if (champSiret && commercants.length) {
+    champSiret.addEventListener('input', function () {
+      var s = champSiret.value.replace(/\D/g, '');
+      if (s.length !== 14) return;
+      var c = commercants.filter(function (x) { return x.s === s; })[0];
+      if (!c) return;
+      if (champLieu && !champLieu.value.trim()) remplir('lieu', c.n);
+      appliquerCommercant(c, false);
+    });
+  }
 
   // Initiales des membres proposés comme participants (« Fabien (FC) »)
   function initialesMembres() {
@@ -347,7 +403,8 @@
     }).then(function (res) {
       var membres = initialesMembres();
       window.NDF.dernierTexte = res.data.text || '';
-      var infos = window.NDF.analyserTicket(res.data.text || '', null, { initiales: membres.map(function (x) { return x.ini; }) });
+      var infos = window.NDF.analyserTicket(res.data.text || '', null,
+        { initiales: membres.map(function (x) { return x.ini; }), commercants: commercants });
       var trouve = [];
       if (infos.montant && !touche.montant) {
         remplir('montant', infos.montant.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -372,6 +429,11 @@
         remplir('montant_tva', infos.tva.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
         trouve.push('TVA ' + formatEuro(infos.tva));
         compta = true;
+      }
+      if (infos.commercant) {
+        appliquerCommercant(infos.commercant.commercant, true);
+        trouve.unshift('commerçant ' + infos.commercant.commercant.n + (infos.commercant.par === 'siret' ? ' (par son SIRET)' : ''));
+        if (infos.commercant.commercant.s) compta = true;
       }
       var det = form.querySelector('.details-compta');
       if (compta && det) det.open = true;
@@ -398,7 +460,10 @@
             // (et donc déjà lu) ne peut pas passer pour une annotation à la main
             var connus = {};
             (res.data.text || '').split(/[^A-Za-zÀ-ÿ0-9]+/).forEach(function (m) { if (m) connus[m.toUpperCase()] = true; });
-            var nouveaux = (res2.data.text || '').split(/[^A-Za-zÀ-ÿ0-9]+/).filter(function (m) { return m && !connus[m.toUpperCase()]; });
+            // mots isolés uniquement : un trait « ------ » mal lu (« —cm-su— ») ne donne pas d'initiales
+            var nouveaux = (res2.data.text || '').split(/\s+/).map(function (m) {
+              return m.replace(/^[«"'(.,;:!?]+|[»"').,;:!?]+$/g, '');
+            }).filter(function (m) { return /^[A-Za-zÀ-ÿ0-9]+$/.test(m) && !connus[m.toUpperCase()]; });
             var an2 = window.NDF.analyserTicket(nouveaux.join(' '), null,
               { initiales: membres.map(function (x) { return x.ini; }), minuscules: true }).annotations;
             notes = notes.concat(appliquerAnnotations(an2, membres, notes));
@@ -430,7 +495,8 @@
     var nouvelles = (an.initiales || []).filter(function (ini) {
       return !deja.some(function (n) { return n.indexOf(ini) >= 0 && n.indexOf('participants') >= 0; });
     });
-    if (nouvelles.length && !touche.participants) {
+    // commerçant connu pour autre chose qu'un repas (carburant…) : pas de participants à cocher
+    if (nouvelles.length && !touche.participants && !(categorieDuCarnet && categorie() !== 'repas')) {
       if (categorie() !== 'repas') {
         var rRepas = $('input[name=categorie][value=repas]');
         if (rRepas) { rRepas.checked = true; rRepas.dispatchEvent(new Event('change', { bubbles: true })); }

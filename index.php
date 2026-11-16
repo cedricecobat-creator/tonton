@@ -129,7 +129,8 @@ case 'depense':
     $membres = membres_pour($u);
     $payeurDep = (int)$dep['user_id'] === (int)$u['id'] ? $u : (q1('SELECT * FROM {users} WHERE id = ?', [(int)$dep['user_id']]) ?? $u);
     $tous = is_admin() ? array_merge(associes(), salaries(), [$u]) : [];
-    render('depense', compact('dep', 'modifiable', 'membres', 'tous', 'payeurDep'), $id ? 'Dépense' : 'Nouveau ticket');
+    $commercants = $modifiable ? commercants_pour_saisie() : [];
+    render('depense', compact('dep', 'modifiable', 'membres', 'tous', 'payeurDep', 'commercants'), $id ? 'Dépense' : 'Nouveau ticket');
 
 case 'depense_save':
     post_only();
@@ -244,6 +245,7 @@ case 'depense_save':
     $ville = $cat === 'km' ? '' : mb_substr(trim((string)($_POST['ville'] ?? '')), 0, 120);
     $description = mb_substr(trim((string)($_POST['description'] ?? '')), 0, 2000);
     $objet = mb_substr(trim((string)($_POST['objet'] ?? '')), 0, 255);
+    $objet_saisi = $objet; // la nature remplie automatiquement n'est pas une habitude du commerçant
     $siret = preg_replace('/\D/', '', (string)($_POST['siret'] ?? ''));
     if ($siret !== '' && strlen($siret) !== 14) {
         $err('Le SIRET du commerçant doit comporter 14 chiffres (ou laissez le champ vide).');
@@ -364,6 +366,19 @@ case 'depense_save':
     q('DELETE FROM {convives} WHERE depense_id = ?', [$id]);
     foreach ($parts as $pid) {
         q('INSERT INTO {convives} (depense_id, membre_id) VALUES (?, ?)', [$id, $pid]);
+    }
+
+    // Carnet des commerçants : nouveau ticket, ou commerçant corrigé sur un ticket existant
+    $change = !$ancien;
+    foreach (['lieu' => $lieu, 'ville' => $ville, 'siret' => $siret, 'categorie' => $cat] as $k => $v) {
+        $change = $change || (string)($ancien[$k] ?? '') !== (string)$v;
+    }
+    if ($change || ($objet_saisi !== '' && $objet_saisi !== (string)($ancien['objet'] ?? ''))) {
+        try {
+            commercant_apprendre(depense_get($id), $objet_saisi);
+        } catch (Throwable $e) {
+            error_log('Tonton commerçants : ' . $e->getMessage());
+        }
     }
 
     // Demande de remboursement immédiat : l'associé concerné est prévenu par e-mail
@@ -1067,6 +1082,88 @@ case 'regul_absence_suppr':
     journal('absence', "retrait tardif {$abs['user_id']} {$abs['date_absence']}");
     flash(($abs['type'] === 'conge' ? 'Congé du ' : 'Formation du ') . date_fr($abs['date_absence']) . ($abs['type'] === 'conge' ? ' retiré.' : ' retirée.'));
     redirect($retour);
+
+/* ------------------------------------------------------------------ */
+/* Carnet des commerçants (administrateur)                            */
+/* ------------------------------------------------------------------ */
+case 'commercants':
+    require_admin();
+    $rech = trim((string)($_GET['q'] ?? ''));
+    $sql = 'SELECT * FROM {commercants}';
+    $p = [];
+    if ($rech !== '') {
+        $sql .= ' WHERE cle LIKE ? OR ville LIKE ? OR siret LIKE ?';
+        $p = ['%' . cle_commercant($rech) . '%', '%' . $rech . '%', '%' . preg_replace('/\D/', '', $rech) . '%'];
+        if (preg_replace('/\D/', '', $rech) === '') {
+            $sql = 'SELECT * FROM {commercants} WHERE cle LIKE ? OR ville LIKE ?';
+            array_pop($p);
+        }
+    }
+    $commercants = qall($sql . ' ORDER BY nom, ville LIMIT 500', $p);
+    $total = (int)q1('SELECT COUNT(*) n FROM {commercants}')['n'];
+    render('commercants', compact('commercants', 'rech', 'total'), 'Commerçants');
+
+case 'commercant':
+    require_admin();
+    $id = (int)($_GET['id'] ?? 0);
+    $c = $id ? commercant_get($id) : ['id' => 0, 'nom' => '', 'ville' => '', 'siret' => '', 'categorie' => '', 'objet' => '',
+        'nb' => 0, 'dernier' => null, 'manuel' => 1];
+    if (!$c) {
+        redirect(url('commercants'));
+    }
+    render('commercant', compact('c'), $id ? 'Commerçant' : 'Nouveau commerçant');
+
+case 'commercant_save':
+    post_only();
+    require_admin();
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id && !commercant_get($id)) {
+        redirect(url('commercants'));
+    }
+    $retour = url('commercant', $id ? ['id' => $id] : []);
+    $nom = mb_substr(trim((string)($_POST['nom'] ?? '')), 0, 255);
+    $ville = mb_substr(trim((string)($_POST['ville'] ?? '')), 0, 120);
+    $siret_brut = preg_replace('/\D/', '', (string)($_POST['siret'] ?? ''));
+    $siret = siret_normalise($siret_brut);
+    $cat = (string)($_POST['categorie'] ?? '');
+    $cat = isset(CATEGORIES[$cat]) && $cat !== 'km' ? $cat : null;
+    $objet = mb_substr(trim((string)($_POST['objet'] ?? '')), 0, 255);
+    if (cle_commercant($nom) === '') {
+        flash('Indiquez le nom du commerçant.', 'erreur');
+        redirect($retour);
+    }
+    if ($siret_brut !== '' && !$siret) {
+        flash('Le SIRET doit comporter 14 chiffres (ou laissez le champ vide).', 'erreur');
+        redirect($retour);
+    }
+    if ($siret && ($autre = q1('SELECT id, nom FROM {commercants} WHERE siret = ? AND id <> ?', [$siret, $id]))) {
+        flash('Ce SIRET est déjà celui de « ' . $autre['nom'] . ' ».', 'erreur');
+        redirect($retour);
+    }
+    if ($id) {
+        q('UPDATE {commercants} SET nom = ?, cle = ?, ville = ?, siret = ?, categorie = ?, objet = ?, manuel = 1, updated_at = UTC_TIMESTAMP() WHERE id = ?',
+            [$nom, cle_commercant($nom), $ville, $siret, $cat, $objet, $id]);
+        journal('commercant_modif', "#$id $nom");
+    } else {
+        q('INSERT INTO {commercants} (nom, cle, ville, siret, categorie, objet, nb, manuel, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 0, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())',
+            [$nom, cle_commercant($nom), $ville, $siret, $cat, $objet]);
+        $id = (int)db()->lastInsertId();
+        journal('commercant_ajout', "#$id $nom");
+    }
+    flash('Commerçant « ' . $nom . ' » enregistré.');
+    redirect(url('commercants'));
+
+case 'commercant_suppr':
+    post_only();
+    require_admin();
+    $c = commercant_get((int)($_POST['id'] ?? 0));
+    if ($c) {
+        q('DELETE FROM {commercants} WHERE id = ?', [(int)$c['id']]);
+        journal('commercant_suppr', "#{$c['id']} {$c['nom']}");
+        flash('Commerçant « ' . $c['nom'] . ' » supprimé du carnet.');
+    }
+    redirect(url('commercants'));
 
 case 'siren':
     require_login();
