@@ -299,6 +299,16 @@ function maj_schema(): void
     if (schema_version_installee() < 3 && !(int)q1('SELECT COUNT(*) n FROM {commercants}')['n']) {
         commercants_initialiser();
     }
+    // Version 3 : un repas d'équipe ne compte plus d'office tous les associés ; les anciens repas
+    // d'équipe reçoivent les associés comme participants cochés (totaux inchangés)
+    if (schema_version_installee() < 3) {
+        q("INSERT INTO {convives} (depense_id, membre_id)
+           SELECT d.id, m.id FROM {depenses} d
+           JOIN {membres} m ON m.user_id IS NOT NULL
+           JOIN {users} u ON u.id = m.user_id AND u.role = 'associe'
+           WHERE d.equipe = 1
+             AND NOT EXISTS (SELECT 1 FROM {convives} c WHERE c.depense_id = d.id AND c.membre_id = m.id)");
+    }
 
     if (!(int)q1('SELECT COUNT(*) n FROM {membres}')['n']) {
         foreach (MEMBRES_INITIAUX as $i => [$prenom, $ini]) {

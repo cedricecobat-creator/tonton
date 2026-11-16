@@ -136,7 +136,18 @@
       if (focus === true && chkInvites.checked) champ.focus();
     }
   }
-  if (chkEquipe) chkEquipe.addEventListener('change', majParticipants);
+  if (chkEquipe) {
+    chkEquipe.addEventListener('change', function () {
+      // « Équipe » coche (ou décoche) les associés ; chacun peut ensuite être décoché s'il était absent
+      $$('input[name="participants[]"][data-associe]').forEach(function (c) {
+        if (c.checked !== chkEquipe.checked) {
+          c.checked = chkEquipe.checked;
+          c.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+      majParticipants();
+    });
+  }
   if (chkInvites) chkInvites.addEventListener('change', function () { majParticipants(true); });
   majParticipants();
 

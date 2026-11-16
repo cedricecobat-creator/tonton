@@ -133,11 +133,11 @@ $alerte = $id && alerte_facture($dep);
       <div class="choix">
         <label class="puce puce-equipe"><input type="checkbox" name="equipe" value="1" id="chk-equipe" <?= (int)($dep['equipe'] ?? 0) ? 'checked' : '' ?>><span>👥 Équipe</span></label>
         <?php foreach ($membres as $mb): ?>
-          <label class="puce"><input type="checkbox" name="participants[]" value="<?= (int)$mb['id'] ?>" <?= in_array((int)$mb['id'], $partIds, true) ? 'checked' : '' ?>><span><?= h($mb['prenom']) ?> <small>(<?= h($mb['initiales']) ?>)</small></span></label>
+          <label class="puce"><input type="checkbox" name="participants[]" value="<?= (int)$mb['id'] ?>" <?= in_array((int)$mb['id'], $partIds, true) ? 'checked' : '' ?><?= in_array((int)$mb['id'], array_map(fn($x) => (int)$x['id'], $avecFiche), true) ? ' data-associe="1"' : '' ?>><span><?= h($mb['prenom']) ?> <small>(<?= h($mb['initiales']) ?>)</small></span></label>
         <?php endforeach; ?>
         <label class="puce puce-invite"><input type="checkbox" name="avec_invites" value="1" id="chk-invites" <?= $avecInvites ? 'checked' : '' ?>><span>+ Invité</span></label>
       </div>
-      <p class="aide" id="aide-equipe" <?= (int)($dep['equipe'] ?? 0) ? '' : 'hidden' ?>>Repas d'équipe : <?= h($nomsFiche ?: 'les associés') ?> sont décomptés automatiquement (pas de prime repas ce jour-là si c'est un repas du midi).</p>
+      <p class="aide" id="aide-equipe" <?= (int)($dep['equipe'] ?? 0) ? '' : 'hidden' ?>>Repas d'équipe : <?= h($nomsFiche ?: 'les associés') ?> <?= count($avecFiche) > 1 ? 'sont cochés' : 'est coché' ?> automatiquement. Décochez un associé absent : il garde sa prime repas ce jour-là.</p>
     </div>
     <label id="bloc-invites" <?= $avecInvites ? '' : 'hidden' ?>>Nom de l'invité ou des invités <span class="obligatoire">*</span>
       <input name="invites" maxlength="255" placeholder="Ex. : M. Dupont (société X)" value="<?= h($dep['invites']) ?>">

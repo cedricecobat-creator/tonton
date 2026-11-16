@@ -442,6 +442,22 @@ n = php_json("(function () { q('DELETE FROM {commercants}'); commercants_initial
 c = com_siret()
 check(int(n) >= 5 and c and int(c['nb']) == 3, f'mise à niveau : carnet reconstitué à partir des tickets existants ({n} commerçants)')
 
+# ---------------------------------------------------------------- repas d'équipe : associé absent décochable
+h = fabien.get(B, params={'p': 'depense'}).text
+check(h.count('data-associe="1"') == 2, "formulaire : Fabien et David marqués comme associés (cochés par « Équipe »)")
+r = ajout(fabien, d + '08', 'repas', 46.40, 'cb_pro', [FC], 'CHEZ ANDRE', 'BAYONNE', extra={'equipe': 1})
+t = totaux()
+check(r['ok'] and 8 in t['David']['jours_primes'], "repas d'équipe avec David décoché : David garde sa prime du 8")
+r = ajout(fabien, d + '08', 'repas', 52.10, 'cb_pro', [FC, DP], 'CHEZ ANDRE', 'BAYONNE', extra={'equipe': 1})
+t = totaux()
+check(r['ok'] and 8 not in t['David']['jours_primes'], "repas d'équipe avec David coché : plus de prime le 8")
+n = php_json("(function () {"
+             " $id = (int)q1(\"SELECT id FROM {depenses} WHERE equipe = 1 AND montant = 46.40\")['id'];"
+             " q('DELETE FROM {convives} WHERE depense_id = ?', [$id]);"
+             " reglage_set('schema_version', '2'); maj_schema();"
+             " return [(int)q1('SELECT COUNT(*) n FROM {convives} WHERE depense_id = ?', [$id])['n'], schema_version_installee()]; })()")
+check(n == [2, 3], f"mise à niveau : un ancien repas d'équipe reçoit les associés comme participants ({n})")
+
 # ---------------------------------------------------------------- pages admin
 for page in ['journal', 'diagnostic', 'utilisateurs', 'absences', 'compte', 'commercants', 'commercant']:
     r = admin.get(B, params={'p': page, 'a': 2026, 'm': 9})

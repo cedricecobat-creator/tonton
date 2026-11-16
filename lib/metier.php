@@ -348,9 +348,8 @@ function depenses_periode(string $debut, string $fin, array $filtre = []): array
     if (isset($filtre['concerne'])) {
         $uid = (int)$filtre['concerne'];
         $sql .= ' AND (d.user_id = ?
-                  OR d.id IN (SELECT c.depense_id FROM {convives} c JOIN {membres} m ON m.id = c.membre_id WHERE m.user_id = ?)
-                  OR (d.equipe = 1 AND EXISTS (SELECT 1 FROM {users} x WHERE x.id = ? AND x.role = \'associe\')))';
-        array_push($p, $uid, $uid, $uid);
+                  OR d.id IN (SELECT c.depense_id FROM {convives} c JOIN {membres} m ON m.id = c.membre_id WHERE m.user_id = ?))';
+        array_push($p, $uid, $uid);
     }
     $sql .= ' ORDER BY d.date_depense, d.id';
     $rows = qall($sql, $p);
@@ -390,12 +389,13 @@ function depense_get(int $id): ?array
     return $d;
 }
 
-/** L'utilisateur est-il compté comme présent à ce repas ? (pour la prime) */
+/**
+ * L'utilisateur est-il compté comme présent à ce repas ? (pour la prime)
+ * Repas d'équipe : cocher « Équipe » coche les associés, que l'on peut décocher (associé absent) ;
+ * seuls les participants cochés comptent.
+ */
 function est_participant(array $dep, array $user): bool
 {
-    if ((int)($dep['equipe'] ?? 0) && est_associe($user)) {
-        return true;
-    }
     foreach ($dep['participants'] ?? [] as $p) {
         if ($p['user_id'] !== null && (int)$p['user_id'] === (int)$user['id']) {
             return true;
