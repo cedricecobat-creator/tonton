@@ -79,7 +79,7 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
         $x->set($s, $l, 3, '', 13);
         $x->set($s, $l, 4, $f['totaux']['kms'] ? ['f' => "SUM(D$premiere:D$derniere)", 'v' => $f['totaux']['kms']] : '', 13);
         $x->set($s, $l, 5, $f['coef_km'], 13);
-        $map = [6 => 'total_kms', 7 => 'peage', 8 => 'repas', 9 => 'carburant', 10 => 'autres', 11 => 'total'];
+        $map = [6 => 'total_kms', 7 => 'peage', 8 => 'repas', 9 => 'carburant', 10 => 'autres', 11 => 'total_tableau'];
         foreach ($map as $c => $k) {
             $col = Xlsx::col($c);
             $x->set($s, $l, $c, ['f' => "SUM($col$premiere:$col$derniere)", 'v' => $f['totaux'][$k]], Xlsx::EURO_GRAS);
@@ -87,6 +87,24 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
         $l += 2;
         $x->set($s, $l, 2, 'Primes repas : ' . $f['nb_primes'] . ' jour(s) × ' . euros($f['prime_montant']) . ' = ' . euros($f['total_primes']), Xlsx::NORMAL);
         $l++;
+        if ($f['regul']) {
+            $l++;
+            $x->set($s, $l, 1, 'RÉGULARISATIONS DES MOIS PRÉCÉDENTS', Xlsx::GRAS);
+            foreach ($f['regul'] as $r) {
+                $l++;
+                if ($r['date']) {
+                    $x->set($s, $l, 1, Xlsx::serial($r['date']), Xlsx::DATE);
+                }
+                $x->set($s, $l, 2, $r['libelle'] . ($r['type'] === 'prime' && !$r['actif'] ? ' (non déduite)' : ''), 12);
+                if ($r['compte']) {
+                    $x->set($s, $l, 11, $r['montant'], Xlsx::EURO);
+                }
+            }
+            $l++;
+            $x->set($s, $l, 2, 'Total des régularisations', Xlsx::GRAS);
+            $x->set($s, $l, 11, $f['total_regul'], Xlsx::EURO_GRAS);
+            $l += 2;
+        }
         $x->set($s, $l, 2, 'Montant à régler à ' . $f['user']['prenom'] . ' :', Xlsx::GRAS);
         $x->set($s, $l, 3, $f['totaux']['total'], Xlsx::EURO_GRAS);
     }
@@ -97,15 +115,15 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
 
     // Récapitulatif pour les virements
     $s = $x->feuille('RÉCAP VIREMENTS');
-    foreach ([28, 16, 16, 16, 16, 4, 18] as $i => $w) {
+    foreach ([28, 16, 16, 16, 18, 16, 4, 18] as $i => $w) {
         $x->largeur($s, $i + 1, $w);
     }
     $x->set($s, 1, 1, 'Récapitulatif ' . MOIS_FR[$m] . ' ' . $a, Xlsx::TITRE);
-    $hd = ['Associé', 'Avances perso (CB, espèces)', 'Frais km', 'Primes repas', 'Total à régler'];
+    $hd = ['Associé', 'Avances perso (CB, espèces)', 'Frais km', 'Primes repas', 'Régularisations mois précédents', 'Total à régler'];
     foreach ($hd as $i => $t) {
         $x->set($s, 3, $i + 1, $t, Xlsx::ENTETE);
     }
-    $x->set($s, 3, 7, 'Tickets CB entreprise (info)', Xlsx::ENTETE);
+    $x->set($s, 3, 8, 'Tickets CB entreprise (info)', Xlsx::ENTETE);
     $x->hauteur($s, 3, 30);
     $l = 3;
     foreach ($fiches as $f) {
@@ -114,17 +132,18 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
         $x->set($s, $l, 2, $f['total_avances'], Xlsx::EURO);
         $x->set($s, $l, 3, $f['totaux']['total_kms'], Xlsx::EURO);
         $x->set($s, $l, 4, $f['total_primes'], Xlsx::EURO);
-        $x->set($s, $l, 5, ['f' => "SUM(B$l:D$l)", 'v' => $f['totaux']['total']], Xlsx::EURO_GRAS);
-        $x->set($s, $l, 7, $f['total_cb_pro'], Xlsx::EURO);
+        $x->set($s, $l, 5, $f['total_regul'], Xlsx::EURO);
+        $x->set($s, $l, 6, ['f' => "SUM(B$l:E$l)", 'v' => $f['totaux']['total']], Xlsx::EURO_GRAS);
+        $x->set($s, $l, 8, $f['total_cb_pro'], Xlsx::EURO);
     }
     $l++;
     $x->set($s, $l, 1, 'TOTAL', 13);
-    foreach ([2, 3, 4, 5, 7] as $c) {
+    foreach ([2, 3, 4, 5, 6, 8] as $c) {
         $col = Xlsx::col($c);
         $v = 0.0;
         foreach ($fiches as $f) {
-            $v += [2 => $f['total_avances'], 3 => $f['totaux']['total_kms'], 4 => $f['total_primes'],
-                5 => $f['totaux']['total'], 7 => $f['total_cb_pro']][$c];
+            $v += [2 => $f['total_avances'], 3 => $f['totaux']['total_kms'], 4 => $f['total_primes'], 5 => $f['total_regul'],
+                6 => $f['totaux']['total'], 8 => $f['total_cb_pro']][$c];
         }
         $x->set($s, $l, $c, ['f' => "SUM({$col}4:$col" . ($l - 1) . ')', 'v' => round($v, 2)], Xlsx::EURO_GRAS);
     }
@@ -193,21 +212,21 @@ function export_pdf(int $a, int $m, ?int $uid = null): string
     $pdf->couleur(0, 0, 0);
 
     $y = 42;
-    $cols = [[15, 'Associé', 'L'], [105, 'Avances CB perso', 'R'], [130, 'Frais km', 'R'], [158, 'Primes repas', 'R'], [195, 'À régler', 'R']];
+    $cols = [[15, 'Associé', 'L'], [92, 'Avances CB perso', 'R'], [114, 'Frais km', 'R'], [140, 'Primes repas', 'R'], [168, 'Régularisations', 'R'], [195, 'À régler', 'R']];
     $pdf->rect(13, $y - 5, 184, 7.5, [221, 229, 238]);
     $pdf->police(true, 9);
     foreach ($cols as [$x, $t, $al]) {
         $pdf->texte($x, $y, $t, $al);
     }
-    $tot = [0.0, 0.0, 0.0, 0.0];
+    $tot = [0.0, 0.0, 0.0, 0.0, 0.0];
     $pdf->police(false, 10);
     foreach ($fiches as $f) {
         $y += 8;
-        $vals = [$f['total_avances'], $f['totaux']['total_kms'], $f['total_primes'], $f['totaux']['total']];
+        $vals = [$f['total_avances'], $f['totaux']['total_kms'], $f['total_primes'], $f['total_regul'], $f['totaux']['total']];
         $pdf->texte(15, $y, nom_complet($f['user']));
         foreach ($vals as $i => $v) {
             $tot[$i] += $v;
-            if ($i === 3) {
+            if ($i === 4) {
                 $pdf->police(true, 10);
             }
             $pdf->texte($cols[$i + 1][0], $y, euros($v), 'R');
@@ -270,6 +289,7 @@ function export_pdf(int $a, int $m, ?int $uid = null): string
     $nbPagesFiches = count($fiches) + 2 * count($fiches_rh);
     $notes = [
         'Le montant à régler comprend les avances faites avec une carte personnelle, les frais kilométriques et les primes repas.',
+        'Régularisations : tickets et congés d\'un mois déjà validé, arrivés après sa clôture (remboursement, et retrait de la prime repas déjà versée ce jour-là).',
         'Prime repas : versée chaque jour ouvré sans ticket de repas du midi, hors jours fériés, congés et formations d\'une journée.',
         'Les dépenses réglées avec la carte de l\'entreprise ne sont pas remboursées ; leurs justificatifs sont joints pour la comptabilité.',
         'Justificatifs joints : ' . count($justifs) . ($justifs ? ' (pages ' . (2 + $nbPagesFiches) . ' à ' . (1 + $nbPagesFiches + $total_pages_justif) . ')' : '') . '.',
@@ -364,8 +384,9 @@ function pdf_fiche(Pdf $pdf, array $f, string $titreMois): void
     $pdf->texte(11, $y, 'TOTAL');
     $t = $f['totaux'];
     $pdf->texte($pos['kms'][0] + $pos['kms'][1] - 1.2, $y, $t['kms'] ? nombre_fr($t['kms'], 0) : '', 'R');
-    foreach (['total_kms', 'peage', 'repas', 'carburant', 'autres', 'total'] as $k) {
-        $pdf->texte($pos[$k][0] + $pos[$k][1] - 1.2, $y, euros($t[$k], true), 'R');
+    foreach (['total_kms', 'peage', 'repas', 'carburant', 'autres', 'total_tableau'] as $k) {
+        $col = $k === 'total_tableau' ? 'total' : $k;
+        $pdf->texte($pos[$col][0] + $pos[$col][1] - 1.2, $y, euros($t[$k], true), 'R');
     }
     $pdf->trait(10, $y + 2, 287, $y + 2, 0.4, 0);
 
@@ -373,8 +394,30 @@ function pdf_fiche(Pdf $pdf, array $f, string $titreMois): void
     $pdf->police(false, 8.5);
     $pdf->texte(11, $y, 'Primes repas : ' . $f['nb_primes'] . ' jour(s) × ' . euros($f['prime_montant']) . ' = ' . euros($f['total_primes'])
         . '     ·     Avances CB perso : ' . euros($f['total_avances']) . '     ·     Frais km : ' . euros($t['total_kms']));
+    if ($f['regul']) {
+        $y += 7;
+        if ($y + 5 * (count($f['regul']) + 2) > 200) {
+            $pdf->page(true);
+            $y = 15;
+        }
+        $pdf->police(true, 8.5);
+        $pdf->texte(11, $y, 'RÉGULARISATIONS DES MOIS PRÉCÉDENTS');
+        $pdf->police(false, 8);
+        foreach ($f['regul'] as $r) {
+            $y += 4.6;
+            $pdf->texte(11, $y, $r['date'] ? date_fr($r['date']) : '');
+            $pdf->texte(32, $y, $pdf->tronquer($r['libelle'] . ($r['type'] === 'prime' && !$r['actif'] ? ' (non déduite)' : ''), 220));
+            if ($r['compte']) {
+                $pdf->texte(287, $y, euros($r['montant']), 'R');
+            }
+        }
+        $y += 5;
+        $pdf->police(true, 8.5);
+        $pdf->texte(287, $y, 'Total des régularisations : ' . euros($f['total_regul']), 'R');
+        $y += 3;
+    }
     $pdf->police(true, 11);
-    $pdf->texte(287, $y + 1, 'Montant à régler : ' . euros($t['total']), 'R');
+    $pdf->texte(287, $y + 4, 'Montant à régler : ' . euros($t['total']), 'R');
 }
 
 
@@ -458,6 +501,16 @@ function pdf_ticket(Pdf $pdf, array $d, int $num): void
             $y += 4.6;
         }
         $y += 0.4;
+    }
+    if (!empty($d['est_regul'])) {
+        $y += 2;
+        $pdf->rect(15, $y - 4.2, 180, 6.5, [241, 234, 254]);
+        $pdf->police(true, 9);
+        $pdf->couleur(91, 33, 182);
+        $pdf->texte(17, $y, 'Ticket de ' . mois_libelle(...mois_de_date($d['date_depense'])) . ' saisi après la clôture : régularisé sur '
+            . mois_libelle((int)$d['regul_annee'], (int)$d['regul_mois']) . '.');
+        $pdf->couleur(0, 0, 0);
+        $y += 5;
     }
     if (alerte_facture($d)) {
         $y += 2;
@@ -561,7 +614,8 @@ function export_zip(int $a, int $m, ?int $uid = null): string
         $deja = [];
         foreach ($p['tickets'] as $i => $d) {
             $base = nom_fichier($d['date_depense'] . ' ' . trim($d['lieu'] . ' ' . $d['ville']) . ' ' . nombre_fr($d['montant']) . ' EUR'
-                . ([ 'cb_pro' => ' CB entreprise', 'cb_perso' => ' CB perso', 'especes' => ' Especes'][$d['paiement']] ?? ''));
+                . ([ 'cb_pro' => ' CB entreprise', 'cb_perso' => ' CB perso', 'especes' => ' Especes'][$d['paiement']] ?? '')
+                . (!empty($d['est_regul']) ? ' - regularisation' : ''));
             $nomf = $base;
             for ($k = 2; isset($deja[$nomf]); $k++) {
                 $nomf = "$base ($k)";

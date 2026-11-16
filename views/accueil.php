@@ -21,6 +21,9 @@ $moi = (int)$user['id'];
       <div><dt>Frais kilométriques</dt><dd><?= euros($fiche['totaux']['total_kms']) ?></dd></div>
     <?php endif; ?>
     <div><dt>Primes repas</dt><dd><?= $fiche['nb_primes'] ?> × <?= euros($fiche['prime_montant']) ?></dd></div>
+    <?php if ($fiche['regul']): ?>
+      <div><dt><a href="<?= h(url('fiche', ['a' => $a, 'm' => $m])) ?>#regularisations">Régularisations mois précédents</a></dt><dd><?= euros($fiche['total_regul']) ?></dd></div>
+    <?php endif; ?>
     <div class="muted"><dt>CB entreprise (info)</dt><dd><?= count($fiche['cb_pro']) ?> ticket(s) · <?= euros($fiche['total_cb_pro']) ?></dd></div>
   </dl>
   <p class="liens-resume">
@@ -86,6 +89,7 @@ $moi = (int)$user['id'];
             <?php if (alerte_facture($d)): ?><span class="badge badge-alerte">⚠ facture &gt; <?= h(nombre_fr(seuil_facture(), 0)) ?> € HT</span>
             <?php elseif ((int)$d['facture_demandee']): ?><span class="badge badge-facture">facture demandée</span><?php endif; ?>
             <?php if ((int)$d['sans_justificatif']): ?><span class="badge badge-sans">sans ticket</span><?php endif; ?>
+            <?php if ($d['est_regul']): ?><span class="badge badge-regul">régularisation <?= h(MOIS_FR[(int)substr($d['date_depense'], 5, 2)]) ?></span><?php endif; ?>
           </span>
         </a>
       </li>

@@ -23,6 +23,9 @@ $alerte = $id && alerte_facture($dep);
   <h1><?= $id ? ($modifiable ? 'Modifier le ticket' : 'Ticket') : 'Nouveau ticket' ?></h1>
 </div>
 
+<?php if ($id && !empty($dep['est_regul'])): [$ra, $rm] = mois_effectif($dep); ?>
+  <p class="alerte alerte-attention">Ticket d'un mois déjà validé : il est régularisé sur la fiche de <?= h(mois_libelle($ra, $rm)) ?>.</p>
+<?php endif; ?>
 <?php if ($id && !$modifiable): ?>
   <p class="alerte">
     <?= (int)$dep['user_id'] !== (int)$user['id'] ? 'Ticket saisi par ' . h($dep['payeur_prenom']) . ' : lecture seule.' : 'Le mois est validé : ce ticket ne peut plus être modifié.' ?>

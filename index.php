@@ -79,7 +79,7 @@ case 'accueil':
     [$debut, $fin] = mois_bornes($a, $m);
     // L'administrateur voit tous les tickets du mois ; les autres, les leurs
     // et ceux des repas auxquels ils ont participé.
-    $deps = est_admin($u) ? depenses_periode($debut, $fin) : depenses_periode($debut, $fin, ['concerne' => $u['id']]);
+    $deps = depenses_periode($debut, $fin, ['mois' => [$a, $m]] + (est_admin($u) ? [] : ['concerne' => $u['id']]));
     $soumis = q1('SELECT soumis_at FROM {soumissions} WHERE user_id = ? AND annee = ? AND mois = ?', [$u['id'], $a, $m]);
     render('accueil', compact('a', 'm', 'fiche', 'frh', 'deps', 'soumis', 'nb_remb', 'nb_suivis'), 'Mon mois');
 
@@ -160,8 +160,16 @@ case 'depense_save':
         $err('La date est dans le futur.');
     }
     [$da, $dm] = mois_de_date($date);
+    $regul = null; // [année, mois] de rattachement si le mois du ticket est clos
     if (!mois_ouvert($da, $dm)) {
-        $err('Le mois de ' . mois_libelle($da, $dm) . " est déjà validé : contactez l'administrateur.");
+        $regul = mois_rattachement($date);
+        $deja = $ancien && $ancien['regul_annee'] !== null
+            && (int)$ancien['regul_annee'] === $regul[0] && (int)$ancien['regul_mois'] === $regul[1];
+        if (!$deja && empty($_POST['confirm_regul'])) {
+            $err('Le mois de ' . mois_libelle($da, $dm) . ' est déjà validé. Ce ticket sera régularisé sur la fiche de '
+                . mois_libelle($regul[0], $regul[1]) . ' : remboursement s\'il a été payé avec vos fonds, et retrait de la prime repas '
+                . 'si elle avait été versée ce jour-là. Continuer ?', ['confirmRegul' => true]);
+        }
     }
 
     $cat = (string)($_POST['categorie'] ?? '');
@@ -329,13 +337,14 @@ case 'depense_save':
     }
 
     $vals = [$payeur_id, $date, $cat, $repas_midi, $paiement, $montant, $kms, $coef, $objet, $lieu, $invites, $equipe,
-        $ville, $description, $siret, $montant_tva, $facture_demandee, $sans_justificatif, $remb_mode, $remb_par, $remb_statut];
+        $ville, $description, $siret, $montant_tva, $facture_demandee, $sans_justificatif, $remb_mode, $remb_par, $remb_statut,
+        $regul[0] ?? null, $regul[1] ?? null];
     if ($id) {
         $f = $nouveau_fichier ?? $fichier;
         q('UPDATE {depenses} SET user_id = ?, date_depense = ?, categorie = ?, repas_midi = ?, paiement = ?, montant = ?,
              kms = ?, coef_km = ?, objet = ?, lieu = ?, invites = ?, equipe = ?, ville = ?, description = ?, siret = ?,
              montant_tva = ?, facture_demandee = ?, sans_justificatif = ?, remb_mode = ?, remb_par = ?, remb_statut = ?,
-             fichier = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?',
+             regul_annee = ?, regul_mois = ?, fichier = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?',
             array_merge($vals, [$f, $id]));
         if ($nouveau_fichier && $fichier) {
             supprimer_justificatif($fichier);
@@ -344,8 +353,8 @@ case 'depense_save':
     } else {
         q('INSERT INTO {depenses} (user_id, date_depense, categorie, repas_midi, paiement, montant, kms, coef_km, objet, lieu,
              invites, equipe, ville, description, siret, montant_tva, facture_demandee, sans_justificatif,
-             remb_mode, remb_par, remb_statut, fichier, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())',
+             remb_mode, remb_par, remb_statut, regul_annee, regul_mois, fichier, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())',
             array_merge($vals, [$nouveau_fichier]));
         $id = (int)db()->lastInsertId();
         journal('depense_ajout', "#$id $date $montant");
@@ -366,7 +375,14 @@ case 'depense_save':
             flash("Aucun associé n'est désigné pour vos remboursements : prévenez l'administrateur.", 'attention');
         }
     }
-    flash('Ticket enregistré : ' . euros($montant) . ' le ' . date_fr($date) . '.');
+    if ($regul) {
+        flash('Ticket du ' . date_fr($date) . ' (' . euros($montant) . ') enregistré en régularisation sur la fiche de '
+            . mois_libelle($regul[0], $regul[1]) . '.');
+        journal('regul_ticket', "#$id $date → {$regul[1]}/{$regul[0]}");
+        [$da, $dm] = $regul;
+    } else {
+        flash('Ticket enregistré : ' . euros($montant) . ' le ' . date_fr($date) . '.');
+    }
     $dest = url_retour($da, $dm);
     if (is_ajax()) {
         json_out(['ok' => true, 'redirect' => $dest]);
@@ -384,7 +400,7 @@ case 'depense_suppr':
     q('DELETE FROM {depenses} WHERE id = ?', [$dep['id']]);
     supprimer_justificatif($dep['fichier']);
     journal('depense_suppr', "#{$dep['id']} {$dep['date_depense']} {$dep['montant']}");
-    [$da, $dm] = mois_de_date($dep['date_depense']);
+    [$da, $dm] = mois_effectif($dep);
     flash('Ticket supprimé.');
     redirect(url_retour($da, $dm));
 
@@ -621,15 +637,17 @@ case 'gestion':
     foreach (associes() as $as) {
         $f = calcul_fiche($as, $a, $m);
         [$debut, $fin] = mois_bornes($a, $m);
-        $f['nb_tickets'] = (int)q1('SELECT COUNT(*) n FROM {depenses} WHERE user_id = ? AND date_depense BETWEEN ? AND ?',
-            [$as['id'], $debut, $fin])['n'];
+        [$cm, $pm] = sql_mois_depense($a, $m);
+        $f['nb_tickets'] = (int)q1("SELECT COUNT(*) n FROM {depenses} d WHERE d.user_id = ? AND $cm",
+            array_merge([$as['id']], $pm))['n'];
         $f['soumis'] = q1('SELECT soumis_at FROM {soumissions} WHERE user_id = ? AND annee = ? AND mois = ?', [$as['id'], $a, $m]);
         $lignes[] = $f;
     }
     [$debut, $fin] = mois_bornes($a, $m);
-    $nb_justifs = (int)q1('SELECT COUNT(*) n FROM {depenses} WHERE fichier IS NOT NULL AND date_depense BETWEEN ? AND ?', [$debut, $fin])['n'];
-    $total_cbpro = (float)q1("SELECT COALESCE(SUM(montant),0) s FROM {depenses} WHERE paiement = 'cb_pro' AND date_depense BETWEEN ? AND ?", [$debut, $fin])['s'];
-    $tous_tickets = depenses_periode($debut, $fin);
+    [$cm, $pm] = sql_mois_depense($a, $m);
+    $nb_justifs = (int)q1("SELECT COUNT(*) n FROM {depenses} d WHERE d.fichier IS NOT NULL AND $cm", $pm)['n'];
+    $total_cbpro = (float)q1("SELECT COALESCE(SUM(d.montant),0) s FROM {depenses} d WHERE d.paiement = 'cb_pro' AND $cm", $pm)['s'];
+    $tous_tickets = depenses_periode($debut, $fin, ['mois' => [$a, $m]]);
     $alertes = array_values(array_filter($tous_tickets, 'alerte_facture'));
     $sans_ticket = array_values(array_filter($tous_tickets, fn($d) => (int)$d['sans_justificatif']));
     $factures = array_values(array_filter($tous_tickets, fn($d) => (int)$d['facture_demandee']));
@@ -946,17 +964,105 @@ case 'absence_perso':
         redirect($retour);
     }
     $ajout = ($_POST['action'] ?? 'ajouter') !== 'retirer';
-    [$n, $verr] = absences_periode_maj($uid, $du, $au, $type, $ajout, is_admin() ? 'manuel' : 'associe');
+    [$n, $verr, $tard] = absences_periode_maj($uid, $du, $au, $type, $ajout, is_admin() ? 'manuel' : 'associe');
     $lib = $type === 'conge' ? 'congé' : 'formation';
     if ($ajout) {
-        flash($n ? "$n jour(s) de $lib enregistré(s) : pas de prime repas ces jours-là." : 'Aucun jour ouvré dans cette période (week-end ou férié).', $n ? 'ok' : 'attention');
+        if ($n || !$tard) {
+            flash($n ? "$n jour(s) de $lib enregistré(s) : pas de prime repas ces jours-là." : 'Aucun jour ouvré dans cette période (week-end ou férié).', $n ? 'ok' : 'attention');
+        }
+        if ($tard) {
+            [$ra, $rm] = mois_rattachement($du);
+            flash("$tard jour(s) de $lib d'un mois déjà validé : régularisé(s) sur la fiche de " . mois_libelle($ra, $rm)
+                . ' (la prime repas déjà versée ces jours-là y est déduite).', 'attention');
+            $retour = url('fiche', ['a' => $ra, 'm' => $rm] + (is_admin() ? ['u' => $uid] : [])) . '#regularisations';
+        }
     } else {
         flash("$n jour(s) de $lib retiré(s).");
     }
     if ($verr) {
-        flash("$verr jour(s) ignoré(s) : leur mois est déjà validé.", 'attention');
+        flash("$verr jour(s) ignoré(s) : déjà déclarés, ou leur mois de régularisation est validé.", 'attention');
     }
     journal('absence', "{$cible['initiales']} $lib " . ($ajout ? 'ajout' : 'retrait') . " $du → $au ($n j)");
+    redirect($retour);
+
+case 'regul_choix':
+    // L'admin coche / décoche la déduction de prime d'un jour
+    post_only();
+    require_admin();
+    $uid = (int)($_POST['u'] ?? 0);
+    $a = (int)($_POST['a'] ?? 0);
+    $m = (int)($_POST['m'] ?? 0);
+    $ymd = (string)($_POST['date_ref'] ?? '');
+    $retour = url('fiche', ['a' => $a, 'm' => $m, 'u' => $uid]) . '#regularisations';
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $ymd) || !q1('SELECT id FROM {users} WHERE id = ?', [$uid]) || $m < 1 || $m > 12) {
+        redirect($retour);
+    }
+    if (!mois_ouvert($a, $m)) {
+        flash('Le mois est validé : la régularisation ne peut plus être modifiée.', 'erreur');
+        redirect($retour);
+    }
+    $actif = !empty($_POST['actif']) ? 1 : 0;
+    q('INSERT INTO {regul_choix} (user_id, date_ref, actif, modifie_par, modifie_at) VALUES (?, ?, ?, ?, UTC_TIMESTAMP())
+       ON DUPLICATE KEY UPDATE actif = VALUES(actif), modifie_par = VALUES(modifie_par), modifie_at = VALUES(modifie_at)',
+        [$uid, $ymd, $actif, (int)current_user()['id']]);
+    journal('regul_choix', "$uid $ymd " . ($actif ? 'déduite' : 'non déduite'));
+    flash($actif ? 'Déduction de la prime du ' . date_fr($ymd) . ' appliquée.' : 'Déduction de la prime du ' . date_fr($ymd) . ' retirée.');
+    redirect($retour);
+
+case 'regul_libre':
+    // L'admin ajoute ou supprime une ligne de régularisation libre (+ ou -)
+    post_only();
+    $moi = require_admin();
+    $uid = (int)($_POST['u'] ?? 0);
+    $a = (int)($_POST['a'] ?? 0);
+    $m = (int)($_POST['m'] ?? 0);
+    $retour = url('fiche', ['a' => $a, 'm' => $m, 'u' => $uid]) . '#regularisations';
+    $cible = q1('SELECT * FROM {users} WHERE id = ?', [$uid]);
+    if (!$cible || $m < 1 || $m > 12) {
+        redirect(url('gestion'));
+    }
+    if (!mois_ouvert($a, $m)) {
+        flash('Le mois est validé : ses régularisations ne peuvent plus être modifiées.', 'erreur');
+        redirect($retour);
+    }
+    if (!empty($_POST['supprimer'])) {
+        q('DELETE FROM {regul_libres} WHERE id = ? AND user_id = ? AND annee = ? AND mois = ?', [(int)$_POST['supprimer'], $uid, $a, $m]);
+        journal('regul_libre', "suppression #" . (int)$_POST['supprimer']);
+        flash('Ligne de régularisation supprimée.');
+        redirect($retour);
+    }
+    $libelle = mb_substr(trim((string)($_POST['libelle'] ?? '')), 0, 255);
+    $montant = parse_montant($_POST['montant'] ?? '');
+    $signe = ($_POST['signe'] ?? '') === 'moins' ? -1 : 1;
+    $ymd = (string)($_POST['date_ref'] ?? '');
+    $ymd = preg_match('/^\d{4}-\d{2}-\d{2}$/', $ymd) ? $ymd : null;
+    if ($libelle === '' || $montant <= 0 || $montant > 100000) {
+        flash('Indiquez le motif et un montant (positif ; choisissez « à déduire » pour un montant négatif).', 'erreur');
+        redirect($retour);
+    }
+    q('INSERT INTO {regul_libres} (user_id, annee, mois, date_ref, libelle, montant, cree_par, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())',
+        [$uid, $a, $m, $ymd, $libelle, $signe * $montant, (int)$moi['id']]);
+    journal('regul_libre', "{$cible['initiales']} $m/$a " . ($signe * $montant) . " $libelle");
+    flash('Régularisation ajoutée : ' . euros($signe * $montant) . '.');
+    redirect($retour);
+
+case 'regul_absence_suppr':
+    // Retrait d'un congé / d'une formation déclaré(e) en retard (tant que le mois de rattachement est ouvert)
+    post_only();
+    $u = require_login();
+    $abs = q1('SELECT * FROM {absences} WHERE id = ? AND regul_annee IS NOT NULL', [(int)($_POST['id'] ?? 0)]);
+    if (!$abs || (!is_admin() && (int)$abs['user_id'] !== (int)$u['id'])) {
+        http_response_code(403);
+        exit('Action non autorisée.');
+    }
+    $retour = url('fiche', ['a' => $abs['regul_annee'], 'm' => $abs['regul_mois']] + (is_admin() ? ['u' => $abs['user_id']] : [])) . '#regularisations';
+    if (!mois_ouvert((int)$abs['regul_annee'], (int)$abs['regul_mois'])) {
+        flash('Le mois de régularisation est validé : suppression impossible.', 'erreur');
+        redirect($retour);
+    }
+    q('DELETE FROM {absences} WHERE id = ?', [$abs['id']]);
+    journal('absence', "retrait tardif {$abs['user_id']} {$abs['date_absence']}");
+    flash(($abs['type'] === 'conge' ? 'Congé du ' : 'Formation du ') . date_fr($abs['date_absence']) . ($abs['type'] === 'conge' ? ' retiré.' : ' retirée.'));
     redirect($retour);
 
 case 'siren':

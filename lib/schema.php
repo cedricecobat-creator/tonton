@@ -9,7 +9,7 @@ declare(strict_types=1);
  * l'étape correspondante dans maj_schema(). La mise à niveau est faite
  * automatiquement à la première visite après le dépôt d'une nouvelle version.
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const ROLES = [
     'admin'   => 'Administrateur',
@@ -80,6 +80,8 @@ function schema_sql(): array
             invites VARCHAR(255) NOT NULL DEFAULT '',
             fichier VARCHAR(255) NULL,
             equipe TINYINT(1) NOT NULL DEFAULT 0,
+            regul_annee SMALLINT UNSIGNED NULL,
+            regul_mois TINYINT UNSIGNED NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             KEY ix_date (date_depense),
@@ -93,6 +95,8 @@ function schema_sql(): array
             date_absence DATE NOT NULL,
             type VARCHAR(10) NOT NULL,
             source VARCHAR(20) NOT NULL DEFAULT 'manuel',
+            regul_annee SMALLINT UNSIGNED NULL,
+            regul_mois TINYINT UNSIGNED NULL,
             UNIQUE KEY uq_user_date (user_id, date_absence),
             CONSTRAINT {fk}_abs_user FOREIGN KEY (user_id) REFERENCES {users}(id)
         ) $opt",
@@ -144,6 +148,32 @@ function schema_sql(): array
             KEY ix_membre (membre_id),
             CONSTRAINT {fk}_conv_dep FOREIGN KEY (depense_id) REFERENCES {depenses}(id) ON DELETE CASCADE,
             CONSTRAINT {fk}_conv_membre FOREIGN KEY (membre_id) REFERENCES {membres}(id)
+        ) $opt",
+
+        // --- Régularisations des mois clos (version 2) ---
+        // choix de l'admin sur la déduction de prime d'un jour (cochée par défaut)
+        "CREATE TABLE IF NOT EXISTS {regul_choix} (
+            user_id INT UNSIGNED NOT NULL,
+            date_ref DATE NOT NULL,
+            actif TINYINT(1) NOT NULL DEFAULT 1,
+            modifie_par INT UNSIGNED NULL,
+            modifie_at DATETIME NULL,
+            PRIMARY KEY (user_id, date_ref),
+            CONSTRAINT {fk}_rc_user FOREIGN KEY (user_id) REFERENCES {users}(id)
+        ) $opt",
+        // lignes libres (+ ou -) saisies par l'admin sur une fiche
+        "CREATE TABLE IF NOT EXISTS {regul_libres} (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id INT UNSIGNED NOT NULL,
+            annee SMALLINT UNSIGNED NOT NULL,
+            mois TINYINT UNSIGNED NOT NULL,
+            date_ref DATE NULL,
+            libelle VARCHAR(255) NOT NULL,
+            montant DECIMAL(10,2) NOT NULL,
+            cree_par INT UNSIGNED NULL,
+            created_at DATETIME NOT NULL,
+            KEY ix_user_mois (user_id, annee, mois),
+            CONSTRAINT {fk}_rl_user FOREIGN KEY (user_id) REFERENCES {users}(id)
         ) $opt",
 
         // --- Phase 2 : fiche mensuelle RH des salariés ---
@@ -206,6 +236,12 @@ function schema_exec(string $sql): void
     q($sql);
 }
 
+function colonne_existe(string $table, string $col): bool
+{
+    return (bool)q1('SELECT 1 c FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?',
+        [t($table), $col]);
+}
+
 function reglage(string $cle, ?string $defaut = null): ?string
 {
     try {
@@ -232,8 +268,12 @@ function maj_schema(): void
     foreach (schema_sql() as $sql) {
         schema_exec($sql);
     }
-    // Futures évolutions :
-    // if (schema_version_installee() < 2) { ... ALTER TABLE ... }
+    // Version 2 : rattachement des tickets et congés tardifs (régularisations)
+    foreach (['depenses', 'absences'] as $table) {
+        if (!colonne_existe($table, 'regul_annee')) {
+            q("ALTER TABLE {{$table}} ADD regul_annee SMALLINT UNSIGNED NULL, ADD regul_mois TINYINT UNSIGNED NULL");
+        }
+    }
 
     if (!(int)q1('SELECT COUNT(*) n FROM {membres}')['n']) {
         foreach (MEMBRES_INITIAUX as $i => [$prenom, $ini]) {

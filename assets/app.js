@@ -41,6 +41,12 @@
     });
   }
 
+  // Cases qui enregistrent dès qu'on les coche (ex. : déduction d'une prime en régularisation)
+  document.addEventListener('change', function (e) {
+    var c = e.target.closest && e.target.closest('[data-auto-submit]');
+    if (c && c.form) c.form.submit();
+  });
+
   // Application installable (écran d'accueil)
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     window.addEventListener('load', function () {

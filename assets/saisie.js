@@ -402,6 +402,7 @@
     if (photoBlob && photoOrigBlob) fd.append('photo_originale', photoOrigBlob, 'ticket-original.jpg');
     if (conf.doublon) fd.set('confirm_doublon', '1');
     if (conf.seuil) fd.set('confirm_150', '1');
+    if (conf.regul) fd.set('confirm_regul', '1');
     zoneErreur.hidden = true;
     btn.classList.add('charge');
     btn.textContent = 'Enregistrement…';
@@ -416,6 +417,11 @@
         btn.textContent = 'Enregistrer';
         if (j.doublon && window.confirm(j.error)) {
           conf.doublon = true;
+          envoyer(conf);
+          return;
+        }
+        if (j.confirmRegul && window.confirm(j.error)) {
+          conf.regul = true;
           envoyer(conf);
           return;
         }

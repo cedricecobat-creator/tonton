@@ -18,7 +18,7 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
   <h2 class="titre-section">Fiches du mois</h2>
   <div class="table-defile">
   <table class="tableau">
-    <thead><tr><th>Associé</th><th class="num">Tickets</th><th class="num">CB perso</th><th class="num">Km</th><th class="num">Primes</th><th class="num">À régler</th><th>Saisie</th><th></th></tr></thead>
+    <thead><tr><th>Associé</th><th class="num">Tickets</th><th class="num">CB perso</th><th class="num">Km</th><th class="num">Primes</th><th class="num">Régul.</th><th class="num">À régler</th><th>Saisie</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($lignes as $f): ?>
       <tr>
@@ -27,13 +27,14 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
         <td class="num"><?= euros($f['total_avances']) ?></td>
         <td class="num"><?= euros($f['totaux']['total_kms']) ?></td>
         <td class="num"><?= $f['nb_primes'] ?> × <?= h(nombre_fr($f['prime_montant'])) ?></td>
+        <td class="num"><?= $f['regul'] ? '<a href="' . h(url('fiche', $qs + ['u' => $f['user']['id']])) . '#regularisations">' . euros($f['total_regul']) . '</a>' : '—' ?></td>
         <td class="num fort"><?= euros($f['totaux']['total']) ?></td>
         <td><?= $f['soumis'] ? '<span class="badge badge-ok">terminée</span>' : '<span class="badge">en cours</span>' ?></td>
         <td><a class="petit" href="<?= h(url('export_zip', $qs + ['u' => $f['user']['id']])) ?>">ZIP</a></td>
       </tr>
     <?php endforeach; ?>
     </tbody>
-    <tfoot><tr><th colspan="5">Total à virer</th><td class="num fort"><?= euros($total) ?></td><td colspan="2"></td></tr></tfoot>
+    <tfoot><tr><th colspan="6">Total à virer</th><td class="num fort"><?= euros($total) ?></td><td colspan="2"></td></tr></tfoot>
   </table>
   </div>
   <p class="petit muted">Tickets CB entreprise du mois (non remboursés) : <?= euros($total_cbpro) ?> · <?= $nb_justifs ?> justificatif(s) au total.</p>
@@ -67,7 +68,8 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
 </section>
 <?php endif; ?>
 
-<?php if ($alertes || $sans_ticket || $factures): ?>
+<?php $avecRegul = array_values(array_filter($lignes, fn($f) => $f['regul'])); ?>
+<?php if ($alertes || $sans_ticket || $factures || $avecRegul): ?>
 <section class="carte">
   <h2 class="titre-section">Points d'attention</h2>
   <?php $ligneT = fn($d) => '<a href="' . h(url('depense', ['id' => $d['id']])) . '">' . h(date_fr($d['date_depense'])) . ' · '
@@ -83,6 +85,17 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
     <div class="alerte">
       <strong><?= count($sans_ticket) ?> dépense(s) sans ticket original</strong> (justificatif généré à partir de la saisie) :
       <ul class="attention-liste"><?php foreach ($sans_ticket as $d): ?><li><?= $ligneT($d) ?></li><?php endforeach; ?></ul>
+    </div>
+  <?php endif; ?>
+  <?php if ($avecRegul): ?>
+    <div class="alerte">
+      <strong>Régularisations de mois précédents</strong> (tickets ou congés arrivés après validation) :
+      <ul class="attention-liste">
+      <?php foreach ($avecRegul as $f): ?>
+        <li><a href="<?= h(url('fiche', $qs + ['u' => $f['user']['id']])) ?>#regularisations"><?= h($f['user']['prenom']) ?></a> :
+          <?= count($f['regul']) ?> ligne(s), <?= euros($f['total_regul']) ?></li>
+      <?php endforeach; ?>
+      </ul>
     </div>
   <?php endif; ?>
   <?php if ($factures): ?>

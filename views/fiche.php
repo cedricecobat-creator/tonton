@@ -20,7 +20,9 @@ $lienTicket = fn(array $d, string $texte): string =>
   <div class="fiche-entete">
     <div>
       <h1 class="fiche-nom"><?= h(mb_strtoupper(nom_complet($fiche['user']))) ?></h1>
-      <p class="muted petit">Fiche de <?= h(mois_libelle($a, $m)) ?><?= $fiche['definitif'] ? '' : ' · provisoire, primes calculées jusqu\'à aujourd\'hui' ?></p>
+      <p class="muted petit">Fiche de <?= h(mois_libelle($a, $m)) ?>
+        <span class="statut-fiche statut-<?= $ouvert ? 'brouillon' : 'validee' ?>"><?= $ouvert ? 'Brouillon' : 'Validée' ?></span>
+        <?= $ouvert && !$fiche['definitif'] ? '· primes calculées jusqu\'à aujourd\'hui' : '' ?></p>
     </div>
     <div class="fiche-total">
       <span class="muted petit">Montant à régler</span>
@@ -31,6 +33,7 @@ $lienTicket = fn(array $d, string $texte): string =>
     Avances CB perso <?= euros($fiche['total_avances']) ?> ·
     Frais km <?= euros($t['total_kms']) ?> ·
     Primes repas <?= $fiche['nb_primes'] ?> × <?= euros($fiche['prime_montant']) ?> = <?= euros($fiche['total_primes']) ?>
+    <?php if ($fiche['regul']): ?> · <a href="#regularisations">Régularisations <?= euros($fiche['total_regul']) ?></a><?php endif; ?>
   </p>
 </section>
 
@@ -89,16 +92,89 @@ $lienTicket = fn(array $d, string $texte): string =>
       <td class="num"><?= euros($t['repas']) ?></td>
       <td class="num"><?= euros($t['carburant']) ?></td>
       <td class="num"><?= euros($t['autres']) ?></td>
-      <td class="num fort"><?= euros($t['total']) ?></td>
+      <td class="num fort"><?= euros($t['total_tableau']) ?></td>
     </tr>
   </tfoot>
 </table>
 </div>
 <p class="aide"><span class="prime">P</span> prime repas de <?= euros($fiche['prime_montant']) ?> incluse dans la colonne Repas. Les dépenses payées avec la CB entreprise ne figurent pas dans les montants. Touchez un objet pour ouvrir le ticket.</p>
 
+<?php if ($fiche['regul'] || est_admin($user)): ?>
+<section class="carte" id="regularisations">
+  <h2 class="titre-section">Régularisations des mois précédents</h2>
+  <p class="petit muted">Tickets, congés et formations arrivés après la validation de leur mois : ils sont comptés sur cette fiche, sans modifier le mois d'origine déjà payé.</p>
+  <?php if ($fiche['regul']): ?>
+  <ul class="liste-regul">
+  <?php foreach ($fiche['regul'] as $r): ?>
+    <li class="regul regul-<?= h($r['type']) ?><?= $r['compte'] || $r['type'] !== 'prime' ? '' : ' regul-off' ?>">
+      <span class="regul-texte">
+        <?php if ($r['type'] === 'ticket'): ?>
+          <?= $lienTicket($r['depense'], $r['libelle']) ?>
+        <?php else: ?>
+          <?= h($r['libelle']) ?>
+        <?php endif; ?>
+        <?php if ($r['type'] === 'prime' && !$r['actif']): ?><span class="petit muted"> — non déduite</span><?php endif; ?>
+        <?php if ($r['type'] === 'libre'): ?><span class="petit muted"> — saisie par l'administrateur</span><?php endif; ?>
+      </span>
+      <span class="regul-montant"><?= $r['compte'] ? euros($r['montant']) : ($r['type'] === 'prime' ? '<s>' . euros($r['montant']) . '</s>' : '') ?></span>
+      <span class="regul-actions">
+        <?php if ($r['type'] === 'prime' && est_admin($user) && $ouvert): ?>
+          <form method="post" action="<?= h(url('regul_choix')) ?>" class="form-x">
+            <?= csrf_field() ?>
+            <input type="hidden" name="u" value="<?= (int)$fiche['user']['id'] ?>"><input type="hidden" name="a" value="<?= $a ?>"><input type="hidden" name="m" value="<?= $m ?>">
+            <input type="hidden" name="date_ref" value="<?= h($r['date_ref']) ?>">
+            <?php if (!$r['actif']): ?><input type="hidden" name="actif" value="1"><?php endif; ?>
+            <label class="case petit"><input type="checkbox" <?= $r['actif'] ? 'checked' : '' ?> data-auto-submit> déduire</label>
+            <noscript><button class="btn btn-lien">Changer</button></noscript>
+          </form>
+        <?php elseif ($r['type'] === 'absence' && $ouvert && (est_admin($user) || $estMoi)): ?>
+          <form method="post" action="<?= h(url('regul_absence_suppr')) ?>" class="form-x" data-confirmer="Retirer ce jour ?">
+            <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+            <button class="btn-x" aria-label="Retirer">×</button>
+          </form>
+        <?php elseif ($r['type'] === 'libre' && est_admin($user) && $ouvert): ?>
+          <form method="post" action="<?= h(url('regul_libre')) ?>" class="form-x" data-confirmer="Supprimer cette ligne ?">
+            <?= csrf_field() ?>
+            <input type="hidden" name="u" value="<?= (int)$fiche['user']['id'] ?>"><input type="hidden" name="a" value="<?= $a ?>"><input type="hidden" name="m" value="<?= $m ?>">
+            <input type="hidden" name="supprimer" value="<?= (int)$r['id'] ?>">
+            <button class="btn-x" aria-label="Supprimer">×</button>
+          </form>
+        <?php endif; ?>
+      </span>
+    </li>
+  <?php endforeach; ?>
+  </ul>
+  <p class="regul-total">Total des régularisations : <strong><?= euros($fiche['total_regul']) ?></strong></p>
+  <?php else: ?>
+    <p class="petit">Aucune régularisation ce mois-ci.</p>
+  <?php endif; ?>
+
+  <?php if (est_admin($user) && $ouvert): ?>
+  <details class="regul-ajout">
+    <summary>Ajouter une ligne de régularisation</summary>
+    <form method="post" action="<?= h(url('regul_libre')) ?>" class="form">
+      <?= csrf_field() ?>
+      <input type="hidden" name="u" value="<?= (int)$fiche['user']['id'] ?>"><input type="hidden" name="a" value="<?= $a ?>"><input type="hidden" name="m" value="<?= $m ?>">
+      <label>Motif<input name="libelle" maxlength="255" required placeholder="Ex. : péage du 18/09 oublié, erreur de montant…"></label>
+      <div class="choix choix-2">
+        <label class="puce"><input type="radio" name="signe" value="plus" checked><span>À verser (+)</span></label>
+        <label class="puce"><input type="radio" name="signe" value="moins"><span>À déduire (−)</span></label>
+      </div>
+      <div class="grille-2">
+        <label>Montant<span class="champ-euro"><input name="montant" inputmode="decimal" required placeholder="0,00"></span></label>
+        <label>Date concernée <span class="muted petit">(facultatif)</span><input type="date" name="date_ref"></label>
+      </div>
+      <button class="btn btn-secondaire btn-plein">Ajouter la ligne</button>
+    </form>
+  </details>
+  <?php endif; ?>
+</section>
+<?php endif; ?>
+
 <section class="carte" id="conges">
   <h2 class="titre-section">Congés et formations<?= $estMoi ? '' : ' de ' . h($fiche['user']['prenom']) ?></h2>
-  <p class="petit muted">Journées entières seulement (une demi-journée ne supprime pas la prime). Ces jours apparaissent sur la fiche et n'ont pas de prime repas.</p>
+  <p class="petit muted">Journées entières seulement (une demi-journée ne supprime pas la prime). Ces jours apparaissent sur la fiche et n'ont pas de prime repas.
+    Un jour d'un mois déjà validé est régularisé sur le premier mois ouvert.</p>
   <?php if ($periodes): ?>
     <ul class="rh-periodes">
     <?php foreach ($periodes as [$du, $au, $nb, $type]): ?>

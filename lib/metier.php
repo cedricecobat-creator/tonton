@@ -286,7 +286,9 @@ function lier_membre(int $user_id): void
 
 /**
  * Dépenses d'une période, avec payeur et participants.
- * $filtre : ['user' => id] dépenses saisies par l'utilisateur,
+ * $filtre : ['mois' => [a, m]] dépenses comptées dans ce mois : celles datées du mois
+ *           (hors tickets tardifs rattachés ailleurs) + les tickets tardifs rattachés au mois,
+ *           ['user' => id] dépenses saisies par l'utilisateur,
  *           ['concerne' => id] saisies par lui OU dont il est participant
  *           (y compris les repas d'équipe pour les associés ayant une fiche).
  */
@@ -294,8 +296,14 @@ function depenses_periode(string $debut, string $fin, array $filtre = []): array
 {
     $sql = 'SELECT d.*, u.prenom AS payeur_prenom, u.nom AS payeur_nom, u.initiales AS payeur_initiales
             FROM {depenses} d JOIN {users} u ON u.id = d.user_id
-            WHERE d.date_depense BETWEEN ? AND ?';
-    $p = [$debut, $fin];
+            WHERE ';
+    if (isset($filtre['mois'])) {
+        [$cond, $p] = sql_mois_depense((int)$filtre['mois'][0], (int)$filtre['mois'][1]);
+        $sql .= $cond;
+    } else {
+        $sql .= 'd.date_depense BETWEEN ? AND ?';
+        $p = [$debut, $fin];
+    }
     if (isset($filtre['user'])) {
         $sql .= ' AND d.user_id = ?';
         $p[] = (int)$filtre['user'];
@@ -323,6 +331,7 @@ function depenses_periode(string $debut, string $fin, array $filtre = []): array
     }
     foreach ($rows as &$r) {
         $r['participants'] = $par[$r['id']] ?? [];
+        $r['est_regul'] = $r['regul_annee'] !== null;
         $r['montant'] = (float)$r['montant'];
         $r['kms'] = $r['kms'] !== null ? (float)$r['kms'] : null;
     }
@@ -338,6 +347,7 @@ function depense_get(int $id): ?array
     }
     $d['participants'] = qall('SELECT m.id, m.prenom, m.initiales, m.user_id FROM {convives} c
                                JOIN {membres} m ON m.id = c.membre_id WHERE c.depense_id = ? ORDER BY m.ordre, m.prenom', [$id]);
+    $d['est_regul'] = $d['regul_annee'] !== null;
     $d['montant'] = (float)$d['montant'];
     $d['kms'] = $d['kms'] !== null ? (float)$d['kms'] : null;
     return $d;
@@ -380,7 +390,7 @@ function peut_voir_depense(array $dep, array $user): bool
 
 function peut_modifier_depense(array $dep, array $user): bool
 {
-    [$a, $m] = mois_de_date($dep['date_depense']);
+    [$a, $m] = mois_effectif($dep);
     if (!mois_ouvert($a, $m)) {
         return false;
     }
@@ -419,9 +429,9 @@ function objet_auto(array $dep, array $participants_initiales): string
 /* Absences                                                           */
 /* ------------------------------------------------------------------ */
 
-function absences_periode(string $debut, string $fin, ?int $user_id = null): array
+function absences_periode(string $debut, string $fin, ?int $user_id = null, bool $avec_tardives = true): array
 {
-    $sql = 'SELECT * FROM {absences} WHERE date_absence BETWEEN ? AND ?';
+    $sql = 'SELECT * FROM {absences} WHERE date_absence BETWEEN ? AND ?' . ($avec_tardives ? '' : ' AND regul_annee IS NULL');
     $p = [$debut, $fin];
     if ($user_id) {
         $sql .= ' AND user_id = ?';
@@ -436,13 +446,16 @@ function absences_periode(string $debut, string $fin, ?int $user_id = null): arr
 
 /**
  * Ajoute (ou retire) une période de congé / formation en journées entières :
- * seuls les jours ouvrés hors fériés sont comptés, les mois validés sont ignorés.
- * Retourne [jours traités, jours ignorés car le mois est validé].
+ * seuls les jours ouvrés hors fériés sont comptés.
+ * Sur un mois déjà validé (clos), le jour est enregistré « en retard » : il est
+ * régularisé sur le premier mois encore ouvert (voir lib/regularisation.php).
+ * Retourne [jours traités, jours ignorés, jours enregistrés en régularisation].
  */
 function absences_periode_maj(int $user_id, string $du, string $au, string $type, bool $ajout, string $source): array
 {
     $n = 0;
     $verrouilles = 0;
+    $tardifs = 0;
     for ($d = new DateTimeImmutable($du); $d->format('Y-m-d') <= $au; $d = $d->modify('+1 day')) {
         $ymd = $d->format('Y-m-d');
         if ((int)$d->format('N') >= 6 || isset(feries((int)$d->format('Y'))[$ymd])) {
@@ -450,7 +463,23 @@ function absences_periode_maj(int $user_id, string $du, string $au, string $type
         }
         [$a, $m] = mois_de_date($ymd);
         if (!mois_ouvert($a, $m)) {
-            $verrouilles++;
+            if ($ajout) {
+                if (absence_tardive($user_id, $ymd, $type, $source)) {
+                    $tardifs++;
+                } else {
+                    $verrouilles++;
+                }
+            } else {
+                // retrait possible seulement pour un jour tardif dont le mois de rattachement est ouvert
+                $r = q1('SELECT * FROM {absences} WHERE user_id = ? AND date_absence = ? AND type = ? AND regul_annee IS NOT NULL',
+                    [$user_id, $ymd, $type]);
+                if ($r && mois_ouvert((int)$r['regul_annee'], (int)$r['regul_mois'])) {
+                    q('DELETE FROM {absences} WHERE id = ?', [$r['id']]);
+                    $n++;
+                } else {
+                    $verrouilles++;
+                }
+            }
             continue;
         }
         if ($ajout) {
@@ -461,14 +490,14 @@ function absences_periode_maj(int $user_id, string $du, string $au, string $type
             $n++;
         }
     }
-    return [$n, $verrouilles];
+    return [$n, $verrouilles, $tardifs];
 }
 
 /** Périodes de congé et de formation d'une personne sur un mois : [[du, au, nb jours, type], …] */
 function absences_periodes(int $user_id, int $a, int $m): array
 {
     [$debut, $fin] = mois_bornes($a, $m);
-    $abs = absences_periode($debut, $fin, $user_id)[$user_id] ?? [];
+    $abs = absences_periode($debut, $fin, $user_id, false)[$user_id] ?? [];
     $out = [];
     foreach (['conge', 'formation'] as $type) {
         foreach (periodes(array_keys(array_filter($abs, fn($t) => $t === $type))) as [$du, $au, $nb]) {
@@ -502,18 +531,21 @@ function absence_set(int $user_id, string $date, ?string $type, string $source =
  *  - pas de prime les jours fériés ni les jours de congé / formation (journée entière) ;
  *  - sinon prime (montant fixé pour le mois).
  */
-function calcul_fiche(array $user, int $a, int $m): array
+function calcul_fiche(array $user, int $a, int $m, bool $avec_regul = true): array
 {
     [$debut, $fin, $nb] = mois_bornes($a, $m);
     $info = mois_info($a, $m);
     $prime = $info['prime_montant'];
     $uid = (int)$user['id'];
     $feries = feries($a);
-    $abs = absences_periode($debut, $fin, $uid)[$uid] ?? [];
+    // les congés déclarés après la clôture ne modifient pas la fiche de leur mois
+    $abs = absences_periode($debut, $fin, $uid, false)[$uid] ?? [];
     $today = aujourdhui();
     $definitif = $info['statut'] !== 'ouvert' || $fin < $today;
 
-    $deps = depenses_periode($debut, $fin, ['concerne' => $uid]);
+    // tickets datés du mois (les tickets tardifs sont traités en régularisation)
+    $deps = array_values(array_filter(depenses_periode($debut, $fin, ['concerne' => $uid, 'mois' => [$a, $m]]),
+        fn($d) => !$d['est_regul']));
 
     $jours = [];
     for ($j = 1; $j <= $nb; $j++) {
@@ -605,11 +637,18 @@ function calcul_fiche(array $user, int $a, int $m): array
     }
     $tot = array_map(fn($v) => round($v, 2), $tot);
 
+    // Régularisations des mois précédents (tickets et congés arrivés après la clôture)
+    $regul = $avec_regul ? regularisations_fiche($user, $a, $m) : [];
+    $total_regul = total_regularisations($regul);
+    $tot['total_tableau'] = $tot['total'];
+    $tot['total'] = round($tot['total'] + $total_regul, 2);
+
     return [
         'user' => $user, 'annee' => $a, 'mois' => $m, 'info' => $info, 'definitif' => $definitif,
+        'regul' => $regul, 'total_regul' => $total_regul,
         'jours' => $jours, 'totaux' => $tot, 'nb_primes' => $nb_primes, 'prime_montant' => $prime,
         'total_primes' => round($nb_primes * $prime, 2),
-        'total_avances' => round($tot['total'] - $tot['total_kms'] - $nb_primes * $prime, 2),
+        'total_avances' => round($tot['total_tableau'] - $tot['total_kms'] - $nb_primes * $prime, 2),
         'cb_pro' => $cb_pro, 'total_cb_pro' => round(array_sum(array_column($cb_pro, 'montant')), 2),
         'coef_km' => (float)$user['coef_km'],
     ];
@@ -619,7 +658,7 @@ function calcul_fiche(array $user, int $a, int $m): array
 function justificatifs_mois(int $a, int $m, ?int $user_id = null): array
 {
     [$debut, $fin] = mois_bornes($a, $m);
-    $deps = depenses_periode($debut, $fin, $user_id ? ['user' => $user_id] : []);
+    $deps = depenses_periode($debut, $fin, ['mois' => [$a, $m]] + ($user_id ? ['user' => $user_id] : []));
     usort($deps, fn($x, $y) => [$x['payeur_prenom'], $x['date_depense'], $x['id']] <=> [$y['payeur_prenom'], $y['date_depense'], $y['id']]);
     return $deps;
 }
@@ -932,7 +971,7 @@ function calcul_fiche_rh(array $user, int $a, int $m): array
     [$debut, $fin] = mois_bornes($a, $m);
     $uid = (int)$user['id'];
     $info = fiche_rh_info($uid, $a, $m);
-    $deps = depenses_periode($debut, $fin, ['user' => $uid]);
+    $deps = depenses_periode($debut, $fin, ['user' => $uid, 'mois' => [$a, $m]]);
     $frais = array_values(array_filter($deps, 'est_avance'));
     $abs = absences_periode($debut, $fin, $uid)[$uid] ?? [];
     $conges = array_keys(array_filter($abs, fn($t) => $t === 'conge'));

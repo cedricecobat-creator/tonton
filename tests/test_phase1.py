@@ -280,12 +280,59 @@ r = fabien.post(B + '?p=depense_suppr', data={'csrf': fabien.csrf, 'id': id_dart
 check('impossible' in r.text, 'mois validé : suppression refusée')
 r = admin.post(B + '?p=absence_set', data={'csrf': admin.csrf, 'user_id': 2, 'date': d + '17', 'type': 'conge'}, headers={'X-Requested-With': 'fetch'})
 check(r.status_code == 400, 'mois validé : absences verrouillées')
-r = conge(fabien, 2, d + '17', d + '17')
-check('déjà validé' in r.text and 17 in totaux()['Fabien']['jours_primes'], 'mois validé : congé saisi par l’associé ignoré')
+r = conge(fabien, 2, d + '29', d + '29')
+check('régularisé' in r.text and 29 in totaux()['Fabien']['jours_primes'],
+      'mois validé : congé du 29/09 régularisé sur octobre, fiche de septembre inchangée')
 r = action('prime', extra={'prime_montant': '5'})
 check('ne peut être changé' in r.text, 'mois validé : prime repas figée')
 t = totaux()
 check(t['Fabien']['definitif'] and abs(t['Fabien']['total'] - 225.96) < 0.001, 'totaux inchangés après validation')
+
+# ---------------------------------------------------------------- régularisations (ticket / congé après clôture)
+import openpyxl
+oct_avant = totaux(2026, 10)
+r = ajout(fabien, d + '17', 'repas', 30, 'cb_perso', [FC, DP], 'BRASSERIE TARDIVE', 'BAYONNE')
+check(not r['ok'] and r.get('confirmRegul') and 'octobre 2026' in r['error'], 'ticket de septembre (clos) : confirmation « régularisé sur octobre »')
+r = ajout(fabien, d + '17', 'repas', 30, 'cb_perso', [FC, DP], 'BRASSERIE TARDIVE', 'BAYONNE', extra={'confirm_regul': 1})
+check(r['ok'] and 'm=10' in r.get('redirect', ''), 'ticket tardif enregistré, rattaché à octobre')
+t9 = totaux(2026, 9)
+check(abs(t9['Fabien']['total'] - 225.96) < 0.001 and 17 in t9['Fabien']['jours_primes'], 'septembre inchangé (225,96 €, prime du 17 conservée)')
+t10 = totaux(2026, 10)
+check(abs(t10['Fabien']['total'] - (oct_avant['Fabien']['total'] + 30 - 4.75)) < 0.001,
+      f"octobre Fabien : + 30,00 € remboursés − 4,75 € de prime -> {oct_avant['Fabien']['total']} → {t10['Fabien']['total']}")
+check(abs(t10['David']['total'] - oct_avant['David']['total']) < 0.001, 'octobre David : rien à déduire (en congé le 17/09, pas de prime versée)')
+r = conge(fabien, 2, '2026-09-23', '2026-09-23')
+t10b = totaux(2026, 10)
+check('régularisé' in r.text and abs(t10b['Fabien']['total'] - (t10['Fabien']['total'] - 4.75)) < 0.001,
+      'congé du 23/09 déclaré après clôture : − 4,75 € sur octobre')
+check(23 in totaux(2026, 9)['Fabien']['jours_primes'], 'septembre inchangé après le congé tardif')
+r = ajout(fabien, d + '23', 'repas', 18, 'cb_pro', [FC], 'SNACK TARDIF', 'PAU', extra={'confirm_regul': 1})
+check(r['ok'] and abs(totaux(2026, 10)['Fabien']['total'] - t10b['Fabien']['total']) < 0.001,
+      'deuxième élément tardif le même jour : pas de double déduction')
+r = fabien.post(B + '?p=regul_choix', data={'csrf': fabien.csrf, 'u': 2, 'a': 2026, 'm': 10, 'date_ref': '2026-09-17'})
+check(r.status_code == 403, "un associé ne peut pas décocher une déduction")
+r = admin.post(B + '?p=regul_choix', data={'csrf': admin.csrf, 'u': 2, 'a': 2026, 'm': 10, 'date_ref': '2026-09-17'})
+check(abs(totaux(2026, 10)['Fabien']['total'] - (t10b['Fabien']['total'] + 4.75)) < 0.001, 'admin : déduction du 17/09 décochée (+ 4,75 €)')
+r = admin.post(B + '?p=regul_choix', data={'csrf': admin.csrf, 'u': 2, 'a': 2026, 'm': 10, 'date_ref': '2026-09-17', 'actif': 1})
+check(abs(totaux(2026, 10)['Fabien']['total'] - t10b['Fabien']['total']) < 0.001, 'admin : déduction recochée')
+r = david.post(B + '?p=regul_libre', data={'csrf': david.csrf, 'u': 3, 'a': 2026, 'm': 10, 'libelle': 'x', 'montant': '5', 'signe': 'plus'})
+check(r.status_code == 403, 'un associé ne peut pas ajouter de ligne libre')
+r = admin.post(B + '?p=regul_libre', data={'csrf': admin.csrf, 'u': 2, 'a': 2026, 'm': 10, 'libelle': 'Péage du 18/09 oublié',
+                                           'montant': '12,50', 'signe': 'plus', 'date_ref': '2026-09-18'})
+check(abs(totaux(2026, 10)['Fabien']['total'] - (t10b['Fabien']['total'] + 12.5)) < 0.001, 'admin : ligne libre + 12,50 €')
+f10 = fabien.get(B, params={'p': 'fiche', 'a': 2026, 'm': 10}).text
+check('id="regularisations"' in f10 and 'Brouillon' in f10 and 'BRASSERIE TARDIVE' in f10 and 'data-auto-submit' not in f10,
+      "fiche d'octobre : section régularisations, statut Brouillon, sans case à cocher pour l'associé")
+check('data-auto-submit' in admin.get(B, params={'p': 'fiche', 'a': 2026, 'm': 10, 'u': 2}).text, "fiche d'octobre côté admin : case « déduire »")
+check('Validée' in fabien.get(B, params={'p': 'fiche', 'a': 2026, 'm': 9}).text, 'fiche de septembre : statut Validée')
+check('régularisation septembre' in fabien.get(B, params={'p': 'accueil', 'a': 2026, 'm': 10}).text, "liste d'octobre : badge « régularisation septembre »")
+z10 = zipfile.ZipFile(io.BytesIO(admin.get(B, params={'p': 'export_zip', 'a': 2026, 'm': 10}).content))
+check(any('2026-09-17 BRASSERIE TARDIVE' in n and 'regularisation' in n for n in z10.namelist()), "ZIP d'octobre : contient le ticket du 17/09 (régularisation)")
+x10 = openpyxl.load_workbook(io.BytesIO(admin.get(B, params={'p': 'export_xlsx', 'a': 2026, 'm': 10}).content))
+check(str(x10['RÉCAP VIREMENTS'].cell(3, 5).value).startswith('Régularisations'), "Excel d'octobre : colonne Régularisations")
+pdf10 = admin.get(B, params={'p': 'export_pdf', 'a': 2026, 'm': 10})
+check(pdf10.content[:5] == b'%PDF-', "PDF d'octobre généré avec les régularisations")
+
 
 # ---------------------------------------------------------------- exports
 x = admin.get(B, params={'p': 'export_xlsx', 'a': 2026, 'm': 9})
@@ -308,6 +355,7 @@ if ok_z:
     pdf_tickets = [n for n in noms if re.search(r'/2026-09-\d\d .+ EUR .+\.pdf$', n)]
     check(len(pdf_tickets) >= 20, f'un PDF par ticket ({len(pdf_tickets)}), ex. : {pdf_tickets[0] if pdf_tickets else "-"}')
     check(any('FABIEN' in n.upper() for n in noms) and any('DAVID' in n.upper() for n in noms), 'un dossier par associé')
+    check(not any('TARDIVE' in n for n in noms), 'ZIP de septembre : sans les tickets régularisés sur octobre')
     if pdf_tickets:
         contenu = zf.read(pdf_tickets[0])
         check(contenu[:5] == b'%PDF-', 'PDF de ticket valide')
