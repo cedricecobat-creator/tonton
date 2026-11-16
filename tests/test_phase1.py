@@ -120,6 +120,13 @@ def ajout(s, date, cat, montant, paiement, parts=(), lieu='COMMERCE', ville='BAY
         return {'ok': False, 'error': r.text[:300]}
 
 
+# ---------------------------------------------------------------- moyen de paiement par défaut
+check('value="cb_perso" checked' in html, 'nouveau ticket : CB perso proposée par défaut')
+r = david.post(B + '?p=compte_paiement', data={'csrf': david.csrf, 'paiement_defaut': 'cb_pro'})
+check('CB entreprise' in r.text, 'associé : choisit « CB entreprise » par défaut dans son compte')
+check('value="cb_pro" checked' in david.get(B, params={'p': 'depense'}).text, 'nouveau ticket de David : CB entreprise cochée')
+r = david.post(B + '?p=compte_paiement', data={'csrf': david.csrf, 'paiement_defaut': 'cb_perso'})
+
 # ---------------------------------------------------------------- septembre 2026
 d = '2026-09-'
 res = [

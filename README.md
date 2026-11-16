@@ -75,6 +75,7 @@ La base de données est mise à niveau automatiquement à la première visite.
   python tests/test_phase1.py http://127.0.0.1:8080 <clé d'installation> <php> /chemin/tonton-config.php
   ```
 
+  et `node tests/ocr_analyse_test.js` pour la lecture des tickets (dates en lettres, annotations).
   Ils rejouent septembre 2026 (Fabien 225,96 €, David 9,50 €) et vérifient les droits,
   l'alerte des 150 € HT, le verrouillage du mois et les exports.
 - Le dossier `tonton-kit/` (cahier des charges, code et documents de référence avec des données réelles)

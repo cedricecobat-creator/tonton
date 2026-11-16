@@ -52,6 +52,19 @@
     var el = $('[name=' + n + ']');
     if (el) el.addEventListener('input', function () { touche[n] = true; });
   });
+  // moyen de paiement et participants choisis à la main : les annotations lues ne les changent pas
+  touche.paiement = !nouveau;
+  touche.participants = !nouveau;
+  $$('input[name=paiement]').forEach(function (r) { r.addEventListener('change', function (e) { if (e.isTrusted) touche.paiement = true; }); });
+  $$('input[name="participants[]"]').forEach(function (r) { r.addEventListener('change', function (e) { if (e.isTrusted) touche.participants = true; }); });
+
+  // Initiales des membres proposés comme participants (« Fabien (FC) »)
+  function initialesMembres() {
+    return $$('input[name="participants[]"]').map(function (c) {
+      var sm = c.parentNode.querySelector('small');
+      return { case: c, ini: sm ? sm.textContent.replace(/[()\s]/g, '').toUpperCase() : '' };
+    }).filter(function (x) { return x.ini; });
+  }
 
   // Équipe et invités
   var chkEquipe = document.getElementById('chk-equipe');
@@ -304,6 +317,7 @@
 
   /* ---------- Lecture automatique (Tesseract, dans le navigateur) ---------- */
   var workerPromesse = null;
+  var lectureDiscrete = false; // 2e lecture (annotations) : pas de message de progression
   function abs(chemin) { return new URL(chemin, location.href).href.replace(/\/$/, ''); }
   function obtenirWorker() {
     if (!window.Tesseract) return Promise.reject(new Error('module de lecture indisponible'));
@@ -314,6 +328,7 @@
         langPath: abs('assets/vendor/tesseract/lang'),
         workerBlobURL: false,
         logger: function (m) {
+          if (lectureDiscrete) return;
           if (m.status === 'recognizing text') {
             message('Lecture du ticket… ' + Math.round(m.progress * 100) + ' %');
           } else if (/load/i.test(m.status)) {
@@ -330,7 +345,9 @@
     obtenirWorker().then(function (w) {
       return w.recognize(canvas);
     }).then(function (res) {
-      var infos = window.NDF.analyserTicket(res.data.text || '');
+      var membres = initialesMembres();
+      window.NDF.dernierTexte = res.data.text || '';
+      var infos = window.NDF.analyserTicket(res.data.text || '', null, { initiales: membres.map(function (x) { return x.ini; }) });
       var trouve = [];
       if (infos.montant && !touche.montant) {
         remplir('montant', infos.montant.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -358,15 +375,75 @@
       }
       var det = form.querySelector('.details-compta');
       if (compta && det) det.open = true;
+      var notes = appliquerAnnotations(infos.annotations || {}, membres);
       majAlerte();
-      if (trouve.length) {
-        message('Lu sur le ticket : ' + trouve.join(', ') + '. Vérifiez avant d\'enregistrer.', 'ok');
-      } else {
-        message('Montant et date non reconnus : saisissez-les à la main.', 'ko');
-      }
+      var msg = function () {
+        var tout = trouve.concat(notes.length ? ['annotations ' + notes.join(', ')] : []);
+        if (tout.length) {
+          message('Lu sur le ticket : ' + tout.join(', ') + '. Vérifiez avant d\'enregistrer.', 'ok');
+        } else {
+          message('Montant et date non reconnus : saisissez-les à la main.', 'ko');
+        }
+      };
+      msg();
+      // 2e lecture en « texte épars » : trouve les mots isolés (annotations à la main
+      // dans une marge), que la lecture normale du ticket laisse souvent de côté.
+      return obtenirWorker().then(function (w) {
+        lectureDiscrete = true;
+        return w.setParameters({ tessedit_pageseg_mode: '11' })
+          .then(function () { return w.recognize(canvas); })
+          .then(function (res2) {
+            window.NDF.texteEpars = res2.data.text || '';
+            // seuls les mots absents de la lecture normale : ce qui est imprimé sur le ticket
+            // (et donc déjà lu) ne peut pas passer pour une annotation à la main
+            var connus = {};
+            (res.data.text || '').split(/[^A-Za-zÀ-ÿ0-9]+/).forEach(function (m) { if (m) connus[m.toUpperCase()] = true; });
+            var nouveaux = (res2.data.text || '').split(/[^A-Za-zÀ-ÿ0-9]+/).filter(function (m) { return m && !connus[m.toUpperCase()]; });
+            var an2 = window.NDF.analyserTicket(nouveaux.join(' '), null,
+              { initiales: membres.map(function (x) { return x.ini; }), minuscules: true }).annotations;
+            notes = notes.concat(appliquerAnnotations(an2, membres, notes));
+            msg();
+          })
+          .then(retablir, retablir);
+        function retablir() { lectureDiscrete = false; return w.setParameters({ tessedit_pageseg_mode: '6' }); }
+      });
     }).catch(function () {
       message('Lecture automatique indisponible : saisissez la date et le montant.', 'ko');
     });
+  }
+
+  // Annotations manuscrites : PERSO / ESPECES (moyen de paiement) et initiales (participants au repas).
+  // Ne change jamais un choix fait à la main. Retourne les nouvelles notes (pour le message).
+  function appliquerAnnotations(an, membres, deja) {
+    deja = deja || [];
+    var notes = [];
+    var choixPaiement = an.perso ? 'cb_perso' : (an.especes ? 'especes' : '');
+    var notePaie = an.perso ? 'PERSO → CB perso' : 'ESPÈCES → espèces';
+    if (choixPaiement && !touche.paiement && deja.indexOf(notePaie) < 0) {
+      var radio = $('input[name=paiement][value=' + choixPaiement + ']');
+      if (radio && !radio.checked) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      notes.push(notePaie);
+    }
+    var nouvelles = (an.initiales || []).filter(function (ini) {
+      return !deja.some(function (n) { return n.indexOf(ini) >= 0 && n.indexOf('participants') >= 0; });
+    });
+    if (nouvelles.length && !touche.participants) {
+      if (categorie() !== 'repas') {
+        var rRepas = $('input[name=categorie][value=repas]');
+        if (rRepas) { rRepas.checked = true; rRepas.dispatchEvent(new Event('change', { bubbles: true })); }
+      }
+      membres.forEach(function (x) {
+        if (nouvelles.indexOf(x.ini) >= 0 && !x.case.checked) {
+          x.case.checked = true;
+          x.case.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+      notes.push(nouvelles.join(' + ') + ' → participants');
+    }
+    return notes;
   }
 
   function remplir(nom, val) {

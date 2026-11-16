@@ -23,6 +23,14 @@ $assoc = associes();
     <label>Barème km (€/km)<input name="coef_km" inputmode="decimal" value="<?= h(nombre_fr($cible['coef_km'], 3)) ?>"></label>
   </div>
   <label>E-mail (identifiant de connexion)<input type="email" name="email" required value="<?= h($cible['email']) ?>"></label>
+  <div class="champ">
+    <span class="champ-titre">Moyen de paiement proposé par défaut sur un nouveau ticket</span>
+    <div class="choix choix-3">
+      <?php foreach (PAIEMENTS_DEFAUT as $pm): ?>
+        <label class="puce puce-<?= $pm === 'cb_pro' ? 'pro' : 'perso' ?>"><input type="radio" name="paiement_defaut" value="<?= $pm ?>" <?= paiement_defaut($cible) === $pm ? 'checked' : '' ?>><span><?= h(PAIEMENTS[$pm]) ?></span></label>
+      <?php endforeach; ?>
+    </div>
+  </div>
 
   <div class="champ">
     <span class="champ-titre">Rôle</span>

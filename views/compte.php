@@ -14,6 +14,18 @@
 </section>
 <?php endif; ?>
 
+<form method="post" action="<?= h(url('compte_paiement')) ?>" class="form carte">
+  <?= csrf_field() ?>
+  <h2 class="titre-section">Moyen de paiement par défaut</h2>
+  <p class="petit muted">Proposé automatiquement sur chaque nouveau ticket (modifiable ticket par ticket).</p>
+  <div class="choix choix-3">
+      <?php foreach (PAIEMENTS_DEFAUT as $pm): ?>
+        <label class="puce puce-<?= $pm === 'cb_pro' ? 'pro' : 'perso' ?>"><input type="radio" name="paiement_defaut" value="<?= $pm ?>" <?= paiement_defaut($user) === $pm ? 'checked' : '' ?>><span><?= h(PAIEMENTS[$pm]) ?></span></label>
+      <?php endforeach; ?>
+    </div>
+  <button class="btn btn-secondaire btn-plein">Enregistrer</button>
+</form>
+
 <form method="post" action="<?= h(url('compte')) ?>" class="form carte">
   <?= csrf_field() ?>
   <h2 class="titre-section">Changer de mot de passe</h2>

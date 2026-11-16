@@ -16,6 +16,15 @@ const PAIEMENTS = [
     'perso'    => 'Véhicule perso', // frais kilométriques
 ];
 
+/** Moyens de paiement qu'on peut choisir par défaut pour un nouveau ticket */
+const PAIEMENTS_DEFAUT = ['cb_perso', 'cb_pro', 'especes'];
+
+function paiement_defaut(?array $u): string
+{
+    $p = (string)($u['paiement_defaut'] ?? '');
+    return in_array($p, PAIEMENTS_DEFAUT, true) ? $p : 'cb_perso';
+}
+
 const STATUTS = [
     'ouvert'   => 'En cours de saisie',
     'valide'   => 'Validé',

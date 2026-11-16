@@ -119,7 +119,7 @@ case 'depense':
             $date = aujourdhui();
         }
         $dep = ['id' => 0, 'user_id' => $u['id'], 'date_depense' => $date, 'categorie' => 'repas', 'repas_midi' => 1,
-            'paiement' => 'cb_perso', 'montant' => null, 'kms' => null, 'coef_km' => $u['coef_km'], 'objet' => '',
+            'paiement' => paiement_defaut($u), 'montant' => null, 'kms' => null, 'coef_km' => $u['coef_km'], 'objet' => '',
             'lieu' => '', 'ville' => '', 'description' => '', 'siret' => '', 'montant_tva' => null,
             'facture_demandee' => 0, 'sans_justificatif' => 0, 'invites' => '', 'fichier' => null, 'equipe' => 0,
             'remb_mode' => null, 'remb_statut' => null,
@@ -813,7 +813,7 @@ case 'utilisateur':
         redirect(url('utilisateurs'));
     }
     $cible ??= ['id' => 0, 'prenom' => '', 'nom' => '', 'initiales' => '', 'email' => '', 'role' => 'associe',
-        'admin_fiche' => 0, 'coef_km' => cfg('coef_km_defaut') ?? 0.382, 'actif' => 1,
+        'admin_fiche' => 0, 'coef_km' => cfg('coef_km_defaut') ?? 0.382, 'paiement_defaut' => 'cb_perso', 'actif' => 1,
         'responsable_id' => null, 'rembourseur_id' => null];
     render('utilisateur', compact('cible'), $id ? nom_complet($cible) : 'Nouvel utilisateur');
 
@@ -839,6 +839,7 @@ case 'utilisateur_save':
         'role'        => $role,
         'admin_fiche' => $role === 'admin' && module_salaries() && !empty($_POST['admin_fiche']) ? 1 : 0,
         'coef_km'     => round(parse_nombre($_POST['coef_km'] ?? 0), 3),
+        'paiement_defaut' => in_array($_POST['paiement_defaut'] ?? '', PAIEMENTS_DEFAUT, true) ? $_POST['paiement_defaut'] : 'cb_perso',
         'actif'       => !empty($_POST['actif']) ? 1 : 0,
         'responsable_id' => null,
         'rembourseur_id' => null,
@@ -889,7 +890,7 @@ case 'utilisateur_save':
         redirect($retour);
     }
     if ($id) {
-        q('UPDATE {users} SET prenom = ?, nom = ?, initiales = ?, email = ?, role = ?, admin_fiche = ?, coef_km = ?, actif = ?,
+        q('UPDATE {users} SET prenom = ?, nom = ?, initiales = ?, email = ?, role = ?, admin_fiche = ?, coef_km = ?, paiement_defaut = ?, actif = ?,
              responsable_id = ?, rembourseur_id = ? WHERE id = ?',
             array_merge(array_values($d), [$id]));
         if ($pw !== '') {
@@ -898,9 +899,9 @@ case 'utilisateur_save':
         journal('user_modif', "#$id {$d['email']} {$d['role']}");
         lier_membre($id);
     } else {
-        q('INSERT INTO {users} (prenom, nom, initiales, email, role, admin_fiche, coef_km, actif, responsable_id, rembourseur_id,
+        q('INSERT INTO {users} (prenom, nom, initiales, email, role, admin_fiche, coef_km, paiement_defaut, actif, responsable_id, rembourseur_id,
              password_hash, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())',
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())',
             array_merge(array_values($d), [password_hash($pw, PASSWORD_DEFAULT)]));
         // l'identifiant est lu AVANT d'écrire dans le journal (sinon on lirait celui du journal)
         $nouvel_id = (int)db()->lastInsertId();
@@ -1086,6 +1087,16 @@ case 'diagnostic':
     render('diagnostic', compact('checks'), 'Diagnostic');
 
 /* ------------------------------------------------------------------ */
+case 'compte_paiement':
+    post_only();
+    $u = require_login();
+    $p = (string)($_POST['paiement_defaut'] ?? '');
+    if (in_array($p, PAIEMENTS_DEFAUT, true)) {
+        q('UPDATE {users} SET paiement_defaut = ? WHERE id = ?', [$p, $u['id']]);
+        flash('Moyen de paiement par défaut : ' . PAIEMENTS[$p] . '.');
+    }
+    redirect(url('compte'));
+
 case 'compte':
     $u = require_login();
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {

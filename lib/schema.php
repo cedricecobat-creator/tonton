@@ -46,6 +46,7 @@ function schema_sql(): array
             responsable_id INT UNSIGNED NULL,
             rembourseur_id INT UNSIGNED NULL,
             coef_km DECIMAL(6,3) NOT NULL DEFAULT 0.382,
+            paiement_defaut VARCHAR(10) NULL,
             actif TINYINT(1) NOT NULL DEFAULT 1,
             failed_logins INT NOT NULL DEFAULT 0,
             locked_until DATETIME NULL,
@@ -269,6 +270,10 @@ function maj_schema(): void
         schema_exec($sql);
     }
     // Version 2 : rattachement des tickets et congés tardifs (régularisations)
+    // moyen de paiement proposé par défaut sur un nouveau ticket
+    if (!colonne_existe('users', 'paiement_defaut')) {
+        q('ALTER TABLE {users} ADD paiement_defaut VARCHAR(10) NULL');
+    }
     foreach (['depenses', 'absences'] as $table) {
         if (!colonne_existe($table, 'regul_annee')) {
             q("ALTER TABLE {{$table}} ADD regul_annee SMALLINT UNSIGNED NULL, ADD regul_mois TINYINT UNSIGNED NULL");
