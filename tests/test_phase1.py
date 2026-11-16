@@ -458,6 +458,16 @@ n = php_json("(function () {"
              " return [(int)q1('SELECT COUNT(*) n FROM {convives} WHERE depense_id = ?', [$id])['n'], schema_version_installee()]; })()")
 check(n == [2, 3], f"mise à niveau : un ancien repas d'équipe reçoit les associés comme participants ({n})")
 
+# ---------------------------------------------------------------- filtres de la liste des tickets
+h = admin.get(B, params={'p': 'accueil', 'a': 2026, 'm': 9}).text
+check('id="filtres-tickets"' in h and 'data-filtre="payeur"' in h and 'data-filtre="convive"' in h,
+      'tickets : panneau de filtres (catégorie, paiement, payé par, participant, particularité)')
+lignes = re.findall(r'<li class="ligne-ticket"[^>]*>', h)
+check(len(lignes) > 5 and all('data-paiement=' in l and 'data-texte=' in l and 'data-montant=' in l for l in lignes),
+      f'tickets : chaque ticket porte ses critères de filtre ({len(lignes)} tickets)')
+check(any('data-equipe="1"' in l for l in lignes) and any('midi' in re.search(r'data-special="([^"]*)"', l).group(1) for l in lignes),
+      "tickets : repas d'équipe et repas du midi repérables par les filtres")
+
 # ---------------------------------------------------------------- pages admin
 for page in ['journal', 'diagnostic', 'utilisateurs', 'absences', 'compte', 'commercants', 'commercant']:
     r = admin.get(B, params={'p': page, 'a': 2026, 'm': 9})

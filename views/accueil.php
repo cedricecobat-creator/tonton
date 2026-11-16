@@ -58,6 +58,62 @@ $moi = (int)$user['id'];
 
 <section>
   <h2 class="titre-section">Tickets du mois <span class="muted">(<?= count($deps) ?>)</span></h2>
+  <?php if (count($deps) > 1):
+      // valeurs proposées dans les filtres : seulement celles présentes ce mois-ci
+      $payeurs = [];
+      $convives = [];
+      $cats = [];
+      foreach ($deps as $d) {
+          $payeurs[(int)$d['user_id']] = (int)$d['user_id'] === $moi ? 'Moi' : $d['payeur_prenom'];
+          foreach ($d['participants'] ?? [] as $p) {
+              $convives[$p['initiales']] = $p['prenom'] . ' (' . $p['initiales'] . ')';
+          }
+          $cats[$d['categorie']] = true;
+          if ((int)$d['equipe']) {
+              $cats['equipe'] = true;
+          }
+      }
+      asort($payeurs);
+      asort($convives);
+  ?>
+  <details class="filtres carte" id="filtres-tickets">
+    <summary>Filtrer les tickets <span class="badge badge-filtres" id="filtres-nb" hidden></span></summary>
+    <div class="filtres-grille">
+      <label class="filtre-texte">Rechercher<input type="search" data-filtre="texte" placeholder="Commerçant, ville, nature…" autocomplete="off"></label>
+      <label>Catégorie<select data-filtre="cat">
+        <option value="">Toutes</option>
+        <?php foreach (CATEGORIES as $k => $lib): if (!isset($cats[$k])) continue; ?><option value="<?= $k ?>"><?= h($lib) ?></option><?php endforeach; ?>
+        <?php if (isset($cats['equipe'])): ?><option value="equipe">Repas d'équipe seulement</option><?php endif; ?>
+      </select></label>
+      <label>Payé avec<select data-filtre="paiement">
+        <option value="">Tous</option>
+        <?php foreach (PAIEMENTS as $k => $lib): ?><option value="<?= $k ?>"><?= h($lib) ?></option><?php endforeach; ?>
+      </select></label>
+      <?php if (count($payeurs) > 1): ?>
+      <label>Payé par<select data-filtre="payeur">
+        <option value="">Tout le monde</option>
+        <?php foreach ($payeurs as $id => $nom): ?><option value="<?= $id ?>"><?= h($nom) ?></option><?php endforeach; ?>
+      </select></label>
+      <?php endif; ?>
+      <?php if ($convives): ?>
+      <label>Participant<select data-filtre="convive">
+        <option value="">Tous</option>
+        <?php foreach ($convives as $ini => $nom): ?><option value="<?= h($ini) ?>"><?= h($nom) ?></option><?php endforeach; ?>
+      </select></label>
+      <?php endif; ?>
+      <label>Particularité<select data-filtre="special">
+        <option value="">Aucune</option>
+        <option value="midi">Repas du midi</option>
+        <option value="alerte">⚠ Facture obligatoire manquante</option>
+        <option value="facture">Facture demandée</option>
+        <option value="sans">Sans ticket</option>
+        <option value="regul">Régularisation</option>
+      </select></label>
+    </div>
+    <button type="button" class="btn btn-lien" id="filtres-effacer">Effacer les filtres</button>
+  </details>
+  <p class="petit muted filtres-resultat" id="filtres-resultat" hidden></p>
+  <?php endif; ?>
   <?php if (!$deps): ?>
     <p class="vide">Aucun ticket pour <?= h(mois_libelle($a, $m)) ?>.<?= $ouvert ? ' Touchez « Ajouter un ticket » pour photographier votre premier justificatif.' : '' ?></p>
   <?php else: ?>
@@ -70,7 +126,13 @@ $moi = (int)$user['id'];
             $jour = $d['date_depense']; ?>
         <li class="liste-jour"><?= h(ucfirst(JOURS_FR[(int)date('N', strtotime($jour))]) . ' ' . date_fr($jour)) ?></li>
       <?php endif; ?>
-      <li>
+      <li class="ligne-ticket" data-cat="<?= h($d['categorie']) ?>" data-equipe="<?= (int)$d['equipe'] ?>" data-paiement="<?= h($d['paiement']) ?>"
+          data-payeur="<?= (int)$d['user_id'] ?>" data-convives="<?= h(implode(',', array_map(fn($p) => $p['initiales'], $d['participants'] ?? []))) ?>"
+          data-montant="<?= h((string)(float)$d['montant']) ?>"
+          data-special="<?= h(implode(' ', array_filter([
+              $d['categorie'] === 'repas' && (int)$d['repas_midi'] ? 'midi' : '', alerte_facture($d) ? 'alerte' : '',
+              (int)$d['facture_demandee'] ? 'facture' : '', (int)$d['sans_justificatif'] ? 'sans' : '', $d['est_regul'] ? 'regul' : '']))) ?>"
+          data-texte="<?= h(mb_strtolower(implode(' ', [$d['lieu'], $d['ville'] ?? '', $d['objet'], $d['description'] ?? '', $d['invites'] ?? '', $d['payeur_prenom'], euros($d['montant'])]), 'UTF-8')) ?>">
         <a class="ticket" href="<?= h(url('depense', ['id' => $d['id']])) ?>">
           <span class="ticket-vignette">
             <?php if ($d['fichier']): ?><img src="<?= h(url('fichier', ['id' => $d['id'], 'mini' => 1])) ?>" alt="" loading="lazy"><?php else: ?><span><?= $d['categorie'] === 'km' ? '🚗' : '—' ?></span><?php endif; ?>

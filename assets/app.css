@@ -444,3 +444,13 @@ input[type=date] { min-width: 0; max-width: 100%; }
 /* Carnet des commerçants */
 .form-recherche { display: flex; gap: .5rem; margin: .8rem 0 .4rem; }
 .form-recherche input { flex: 1; min-width: 0; }
+
+/* Filtres de la liste des tickets */
+.filtres { padding: .6rem 1rem; margin: 0 0 .8rem; }
+.filtres summary { margin: .2rem 0; display: flex; align-items: center; gap: .5rem; }
+.filtres-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .6rem; margin: .6rem 0 .2rem; }
+.filtres-grille label { font-size: .85rem; margin: 0; min-width: 0; }
+.filtres-grille select, .filtres-grille input { width: 100%; min-height: 40px; margin-top: .2rem; }
+.filtre-texte { grid-column: 1 / -1; }
+.badge-filtres { background: var(--primaire); color: #fff; }
+.filtres-resultat { margin: -.3rem 0 .6rem; }

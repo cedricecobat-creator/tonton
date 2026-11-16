@@ -47,6 +47,61 @@
     if (c && c.form) c.form.submit();
   });
 
+  // Filtres de la liste des tickets (sur la page, sans recharger ; gardés d'un mois à l'autre)
+  var filtres = document.getElementById('filtres-tickets');
+  if (filtres) {
+    var champs = Array.prototype.slice.call(filtres.querySelectorAll('[data-filtre]'));
+    var lignes = Array.prototype.slice.call(document.querySelectorAll('.liste-tickets .ligne-ticket'));
+    var resultat = document.getElementById('filtres-resultat');
+    var pastille = document.getElementById('filtres-nb');
+    var CLE = 'tonton-filtres-tickets';
+    var sansAccents = function (t) { return t.normalize ? t.normalize('NFD').replace(/[̀-ͯ]/g, '') : t; };
+    var appliquer = function () {
+      var v = {};
+      champs.forEach(function (c) { v[c.getAttribute('data-filtre')] = c.value.trim(); });
+      var mots = sansAccents(v.texte.toLowerCase()).split(/\s+/).filter(Boolean);
+      var n = 0, total = 0;
+      lignes.forEach(function (li) {
+        var d = li.dataset;
+        var ok = (!v.cat || (v.cat === 'equipe' ? d.equipe === '1' : d.cat === v.cat))
+          && (!v.paiement || d.paiement === v.paiement)
+          && (!v.payeur || d.payeur === v.payeur)
+          && (!v.convive || d.convives.split(',').indexOf(v.convive) >= 0)
+          && (!v.special || d.special.split(' ').indexOf(v.special) >= 0)
+          && mots.every(function (m) { return sansAccents(d.texte).indexOf(m) >= 0; });
+        li.hidden = !ok;
+        if (ok) { n++; total += parseFloat(d.montant) || 0; }
+      });
+      // en-têtes de jour sans ticket visible
+      Array.prototype.slice.call(document.querySelectorAll('.liste-tickets .liste-jour')).forEach(function (j) {
+        var el = j.nextElementSibling, vu = false;
+        while (el && !el.classList.contains('liste-jour')) { if (!el.hidden) vu = true; el = el.nextElementSibling; }
+        j.hidden = !vu;
+      });
+      var actifs = champs.filter(function (c) { return c.value.trim() !== ''; }).length;
+      pastille.hidden = !actifs;
+      pastille.textContent = actifs;
+      resultat.hidden = !actifs;
+      resultat.textContent = n + ' ticket(s) sur ' + lignes.length + ' · total '
+        + total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+      try { sessionStorage.setItem(CLE, JSON.stringify(v)); } catch (e) { /* navigation privée */ }
+    };
+    try {
+      var memo = JSON.parse(sessionStorage.getItem(CLE) || '{}');
+      champs.forEach(function (c) {
+        var val = memo[c.getAttribute('data-filtre')];
+        if (val && (c.tagName !== 'SELECT' || c.querySelector('option[value="' + val.replace(/"/g, '') + '"]'))) c.value = val;
+      });
+    } catch (e) { /* rien de mémorisé */ }
+    champs.forEach(function (c) { c.addEventListener(c.tagName === 'SELECT' ? 'change' : 'input', appliquer); });
+    document.getElementById('filtres-effacer').addEventListener('click', function () {
+      champs.forEach(function (c) { c.value = ''; });
+      appliquer();
+    });
+    appliquer();
+    if (champs.some(function (c) { return c.value.trim() !== ''; })) filtres.open = true;
+  }
+
   // Application installable (écran d'accueil)
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     window.addEventListener('load', function () {
