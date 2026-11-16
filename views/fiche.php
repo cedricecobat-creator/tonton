@@ -22,7 +22,7 @@ $lienTicket = fn(array $d, string $texte): string =>
       <h1 class="fiche-nom"><?= h(mb_strtoupper(nom_complet($fiche['user']))) ?></h1>
       <p class="muted petit">Fiche de <?= h(mois_libelle($a, $m)) ?>
         <span class="statut-fiche statut-<?= $ouvert ? 'brouillon' : 'validee' ?>"><?= $ouvert ? 'Brouillon' : 'Validée' ?></span>
-        <?= $ouvert && !$fiche['definitif'] ? '· primes calculées jusqu\'à aujourd\'hui' : '' ?></p>
+        <?= $ouvert && !$fiche['definitif'] ? '· Ft repas calculés jusqu\'à aujourd\'hui' : '' ?></p>
     </div>
     <div class="fiche-total">
       <span class="muted petit">Montant à régler</span>
@@ -32,7 +32,7 @@ $lienTicket = fn(array $d, string $texte): string =>
   <p class="petit">
     Avances CB perso <?= euros($fiche['total_avances']) ?> ·
     Frais km <?= euros($t['total_kms']) ?> ·
-    Primes repas <?= $fiche['nb_primes'] ?> × <?= euros($fiche['prime_montant']) ?> = <?= euros($fiche['total_primes']) ?>
+    Ft repas <?= $fiche['nb_primes'] ?> × <?= euros($fiche['prime_montant']) ?> = <?= euros($fiche['total_primes']) ?>
     <?php if ($fiche['regul']): ?> · <a href="#regularisations">Régularisations <?= euros($fiche['total_regul']) ?></a><?php endif; ?>
   </p>
 </section>
@@ -75,7 +75,7 @@ $lienTicket = fn(array $d, string $texte): string =>
       <td class="num"><?= $j['coef'] ? h(nombre_fr($j['coef'], 3)) : '' ?></td>
       <td class="num"><?= euros($j['total_kms'], true) ?></td>
       <td class="num"><?= euros($j['peage'], true) ?></td>
-      <td class="num"><?= euros($j['repas'], true) ?><?= $j['prime'] ? '<span class="prime" title="Prime repas">P</span>' : '' ?></td>
+      <td class="num"><?= euros($j['repas'], true) ?><?= $j['prime'] ? '<span class="prime" title="Ft repas (forfait repas)">F</span>' : '' ?></td>
       <td class="num"><?= euros($j['carburant'], true) ?></td>
       <td class="num"><?= euros($j['autres'], true) ?></td>
       <td class="num fort"><?= euros($j['total'], true) ?></td>
@@ -97,7 +97,7 @@ $lienTicket = fn(array $d, string $texte): string =>
   </tfoot>
 </table>
 </div>
-<p class="aide"><span class="prime">P</span> prime repas de <?= euros($fiche['prime_montant']) ?> incluse dans la colonne Repas. Les dépenses payées avec la CB entreprise ne figurent pas dans les montants. Touchez un objet pour ouvrir le ticket.</p>
+<p class="aide"><span class="prime">F</span> Ft repas (forfait repas) de <?= euros($fiche['prime_montant']) ?> incluse dans la colonne Repas. Les dépenses payées avec la CB entreprise ne figurent pas dans les montants. Touchez un objet pour ouvrir le ticket.</p>
 
 <?php if ($fiche['regul'] || est_admin($user)): ?>
 <section class="carte" id="regularisations">
@@ -113,7 +113,7 @@ $lienTicket = fn(array $d, string $texte): string =>
         <?php else: ?>
           <?= h($r['libelle']) ?>
         <?php endif; ?>
-        <?php if ($r['type'] === 'prime' && !$r['actif']): ?><span class="petit muted"> — non déduite</span><?php endif; ?>
+        <?php if ($r['type'] === 'prime' && !$r['actif']): ?><span class="petit muted"> — non déduit</span><?php endif; ?>
         <?php if ($r['type'] === 'libre'): ?><span class="petit muted"> — saisie par l'administrateur</span><?php endif; ?>
       </span>
       <span class="regul-montant"><?= $r['compte'] ? euros($r['montant']) : ($r['type'] === 'prime' ? '<s>' . euros($r['montant']) . '</s>' : '') ?></span>
@@ -173,7 +173,7 @@ $lienTicket = fn(array $d, string $texte): string =>
 
 <section class="carte" id="conges">
   <h2 class="titre-section">Congés et formations<?= $estMoi ? '' : ' de ' . h($fiche['user']['prenom']) ?></h2>
-  <p class="petit muted">Journées entières seulement (une demi-journée ne supprime pas la prime). Ces jours apparaissent sur la fiche et n'ont pas de prime repas.
+  <p class="petit muted">Journées entières seulement (une demi-journée ne supprime pas le Ft repas). Ces jours apparaissent sur la fiche et n'ont pas de Ft repas.
     Un jour d'un mois déjà validé est régularisé sur le premier mois ouvert.</p>
   <?php if ($periodes): ?>
     <ul class="rh-periodes">

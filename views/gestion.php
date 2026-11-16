@@ -18,7 +18,7 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
   <h2 class="titre-section">Fiches du mois</h2>
   <div class="table-defile">
   <table class="tableau">
-    <thead><tr><th>Associé</th><th class="num">Tickets</th><th class="num">CB perso</th><th class="num">Km</th><th class="num">Primes</th><th class="num">Régul.</th><th class="num">À régler</th><th>Saisie</th><th></th></tr></thead>
+    <thead><tr><th>Associé</th><th class="num">Tickets</th><th class="num">CB perso</th><th class="num">Km</th><th class="num">Ft repas</th><th class="num">Régul.</th><th class="num">À régler</th><th>Saisie</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($lignes as $f): ?>
       <tr>
@@ -115,10 +115,10 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
   <div class="etape <?= $st !== 'ouvert' ? 'fait' : '' ?>">
     <div class="etape-titre"><span class="etape-num">2</span> Valider le mois</div>
     <?php if ($st === 'ouvert'): ?>
-      <p class="petit">La validation verrouille les tickets et fige les primes.<?= $termine ? '' : ' <strong>Le mois n\'est pas terminé.</strong>' ?></p>
+      <p class="petit">La validation verrouille les tickets et fige les Ft repas.<?= $termine ? '' : ' <strong>Le mois n\'est pas terminé.</strong>' ?></p>
       <form method="post" action="<?= h(url('gestion_action')) ?>" class="ligne-form">
         <?= csrf_field() ?><input type="hidden" name="a" value="<?= $a ?>"><input type="hidden" name="m" value="<?= $m ?>"><input type="hidden" name="action" value="prime">
-        <label class="petit">Prime repas du mois
+        <label class="petit">Ft repas du mois
           <span class="champ-euro"><input name="prime_montant" inputmode="decimal" value="<?= h(nombre_fr($info['prime_montant'])) ?>" size="5"></span>
         </label>
         <button class="btn btn-lien">Modifier</button>
@@ -127,7 +127,7 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
           $termine ? 'Valider le mois ? Les associés ne pourront plus modifier leurs tickets.' : "Le mois n'est pas terminé. Valider quand même ?") ?>
     <?php else: ?>
       <p class="petit">Validé le <?= h(date('d/m/Y', strtotime($info['valide_at'] . ' UTC'))) ?>.</p>
-      <?= $action('rouvrir', 'Rouvrir le mois', 'btn-lien', 'Rouvrir le mois ? Les primes seront recalculées et les associés pourront de nouveau modifier leurs tickets.') ?>
+      <?= $action('rouvrir', 'Rouvrir le mois', 'btn-lien', 'Rouvrir le mois ? Les Ft repas seront recalculés et les associés pourront de nouveau modifier leurs tickets.') ?>
     <?php endif; ?>
   </div>
 

@@ -170,8 +170,8 @@ case 'depense_save':
             $err('Le mois de ' . mois_libelle($da, $dm) . (avant_tonton($da, $dm)
                     ? ' a été traité avant Tonton (démarrage en ' . mois_libelle(...premier_mois()) . ').'
                     : ' est déjà validé.') . ' Ce ticket sera régularisé sur la fiche de '
-                . mois_libelle($regul[0], $regul[1]) . ' : remboursement s\'il a été payé avec vos fonds, et retrait de la prime repas '
-                . 'si elle avait été versée ce jour-là. Continuer ?', ['confirmRegul' => true]);
+                . mois_libelle($regul[0], $regul[1]) . ' : remboursement s\'il a été payé avec vos fonds, et retrait du Ft repas '
+                . 's\'il avait été versé ce jour-là. Continuer ?', ['confirmRegul' => true]);
         }
     }
 
@@ -688,11 +688,11 @@ case 'gestion_action':
     ];
     if ($action === 'prime') {
         if ($info['statut'] !== 'ouvert') {
-            flash('Le montant de la prime ne peut être changé que sur un mois en cours.', 'erreur');
+            flash('Le montant du Ft repas ne peut être changé que sur un mois en cours.', 'erreur');
         } else {
             $p = parse_montant($_POST['prime_montant'] ?? '');
             if ($p < 0 || $p > 100) {
-                flash('Montant de prime invalide.', 'erreur');
+                flash('Montant du Ft repas invalide.', 'erreur');
             } else {
                 if (!$info['existe']) {
                     q('INSERT INTO {mois} (annee, mois, statut, prime_montant) VALUES (?, ?, ?, ?)', [$a, $m, 'ouvert', $p]);
@@ -700,7 +700,7 @@ case 'gestion_action':
                     q('UPDATE {mois} SET prime_montant = ? WHERE annee = ? AND mois = ?', [$p, $a, $m]);
                 }
                 journal('prime_montant', "$m/$a $p");
-                flash('Prime repas du mois fixée à ' . euros($p) . '.');
+                flash('Ft repas du mois fixé à ' . euros($p) . '.');
             }
         }
     } elseif (isset($transitions[$action])) {
@@ -986,12 +986,12 @@ case 'absence_perso':
     $lib = $type === 'conge' ? 'congé' : 'formation';
     if ($ajout) {
         if ($n || !$tard) {
-            flash($n ? "$n jour(s) de $lib enregistré(s) : pas de prime repas ces jours-là." : 'Aucun jour ouvré dans cette période (week-end ou férié).', $n ? 'ok' : 'attention');
+            flash($n ? "$n jour(s) de $lib enregistré(s) : pas de Ft repas ces jours-là." : 'Aucun jour ouvré dans cette période (week-end ou férié).', $n ? 'ok' : 'attention');
         }
         if ($tard) {
             [$ra, $rm] = mois_rattachement($du);
             flash("$tard jour(s) de $lib d'un mois déjà validé : régularisé(s) sur la fiche de " . mois_libelle($ra, $rm)
-                . ' (la prime repas déjà versée ces jours-là y est déduite).', 'attention');
+                . ' (le Ft repas déjà versé ces jours-là y est déduit).', 'attention');
             $retour = url('fiche', ['a' => $ra, 'm' => $rm] + (is_admin() ? ['u' => $uid] : [])) . '#regularisations';
         }
     } else {
@@ -1024,7 +1024,7 @@ case 'regul_choix':
        ON DUPLICATE KEY UPDATE actif = VALUES(actif), modifie_par = VALUES(modifie_par), modifie_at = VALUES(modifie_at)',
         [$uid, $ymd, $actif, (int)current_user()['id']]);
     journal('regul_choix', "$uid $ymd " . ($actif ? 'déduite' : 'non déduite'));
-    flash($actif ? 'Déduction de la prime du ' . date_fr($ymd) . ' appliquée.' : 'Déduction de la prime du ' . date_fr($ymd) . ' retirée.');
+    flash($actif ? 'Déduction du Ft repas du ' . date_fr($ymd) . ' appliquée.' : 'Déduction du Ft repas du ' . date_fr($ymd) . ' retirée.');
     redirect($retour);
 
 case 'regul_libre':

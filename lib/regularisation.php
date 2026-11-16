@@ -157,14 +157,14 @@ function regularisations_fiche(array $user, int $a, int $m): array
                 $actif = regul_choix_actif($uid, $ymd);
                 $lignes[] = [
                     'type' => 'prime', 'date' => $ymd, 'date_ref' => $ymd,
-                    'libelle' => 'Prime repas du ' . date_fr($ymd, true)
-                        . (avant_tonton(...mois_de_date($ymd)) ? ' présumée versée hors Tonton (' : ' déjà versée (') . $motifs . ')',
+                    'libelle' => 'Ft repas du ' . date_fr($ymd, true)
+                        . (avant_tonton(...mois_de_date($ymd)) ? ' présumé versé hors Tonton (' : ' déjà versé (') . $motifs . ')',
                     'montant' => -$prime, 'actif' => $actif, 'compte' => $actif,
                 ];
             } else {
                 $lignes[] = [
                     'type' => 'info', 'date' => $ymd,
-                    'libelle' => 'Pas de prime repas versée le ' . date_fr($ymd, true) . ' : rien à déduire',
+                    'libelle' => 'Pas de Ft repas versé le ' . date_fr($ymd, true) . ' : rien à déduire',
                     'montant' => 0.0, 'actif' => true, 'compte' => false,
                 ];
             }

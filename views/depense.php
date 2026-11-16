@@ -127,7 +127,7 @@ $alerte = $id && alerte_facture($dep);
       <input type="checkbox" name="repas_midi" value="1" <?= (int)$dep['repas_midi'] ? 'checked' : '' ?>>
       <span>Repas du midi</span>
     </label>
-    <p class="aide">Un repas du midi supprime la prime repas de chaque associé présent, quel que soit celui qui paie.</p>
+    <p class="aide">Un repas du midi supprime le Ft repas de chaque associé présent, quel que soit celui qui paie.</p>
     <div class="champ">
       <span class="champ-titre">Participants</span>
       <div class="choix">
@@ -137,7 +137,7 @@ $alerte = $id && alerte_facture($dep);
         <?php endforeach; ?>
         <label class="puce puce-invite"><input type="checkbox" name="avec_invites" value="1" id="chk-invites" <?= $avecInvites ? 'checked' : '' ?>><span>+ Invité</span></label>
       </div>
-      <p class="aide" id="aide-equipe" <?= (int)($dep['equipe'] ?? 0) ? '' : 'hidden' ?>>Repas d'équipe : <?= h($nomsFiche ?: 'les associés') ?> <?= count($avecFiche) > 1 ? 'sont cochés' : 'est coché' ?> automatiquement. Décochez un associé absent : il garde sa prime repas ce jour-là.</p>
+      <p class="aide" id="aide-equipe" <?= (int)($dep['equipe'] ?? 0) ? '' : 'hidden' ?>>Repas d'équipe : <?= h($nomsFiche ?: 'les associés') ?> <?= count($avecFiche) > 1 ? 'sont cochés' : 'est coché' ?> automatiquement. Décochez un associé absent : il garde son Ft repas ce jour-là.</p>
     </div>
     <label id="bloc-invites" <?= $avecInvites ? '' : 'hidden' ?>>Nom de l'invité ou des invités <span class="obligatoire">*</span>
       <input name="invites" maxlength="255" placeholder="Ex. : M. Dupont (société X)" value="<?= h($dep['invites']) ?>">

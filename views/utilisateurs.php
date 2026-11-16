@@ -19,11 +19,11 @@
   </tbody>
 </table>
 </div>
-<p class="aide">Associé : fiche mensuelle avec prime repas. Salarié : fiche mensuelle RH (phase 2). Administrateur : gère les comptes, valide les mois et fait les exports.</p>
+<p class="aide">Associé : fiche mensuelle avec Ft repas. Salarié : fiche mensuelle RH (phase 2). Administrateur : gère les comptes, valide les mois et fait les exports.</p>
 
 <section class="carte" id="membres">
   <h2 class="titre-section">Membres de l'équipe (participants aux repas)</h2>
-  <p class="petit muted">Liste proposée lors de la saisie d'un repas. La personne qui saisit apparaît en premier, puis les associés, puis les autres membres selon l'ordre ci-dessous. Un membre relié à un compte associé perd sa prime repas du jour quand il est coché sur un repas du midi. Un membre est relié automatiquement au compte qui a les mêmes initiales.</p>
+  <p class="petit muted">Liste proposée lors de la saisie d'un repas. La personne qui saisit apparaît en premier, puis les associés, puis les autres membres selon l'ordre ci-dessous. Un membre relié à un compte associé perd son Ft repas du jour quand il est coché sur un repas du midi. Un membre est relié automatiquement au compte qui a les mêmes initiales.</p>
   <div class="ligne-membre entete-membre petit muted"><span>Prénom</span><span>Initiales</span><span>Ordre</span><span></span><span>Compte</span><span></span></div>
   <?php foreach ($membres as $mb): ?>
     <form method="post" action="<?= h(url('membre_save')) ?>" class="ligne-membre <?= (int)$mb['actif'] ? '' : 'inactif' ?>">

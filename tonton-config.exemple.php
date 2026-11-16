@@ -42,10 +42,10 @@ return [
 
     // Règles
     'seuil_facture_ht' => 150,   // alerte facture obligatoire (€ HT)
-    'prime_repas'      => 4.75,  // prime repas par défaut (modifiable chaque mois)
+    'prime_repas'      => 4.75,  // Ft repas (forfait repas) par défaut (modifiable chaque mois)
     // 'premier_mois'  => '2026-10', // premier mois géré par Tonton (les précédents ont été traités avant)
     'coef_km_defaut'   => 0.382, // barème km par défaut (modifiable par personne)
-    // Jours fériés travaillés (donnent droit à la prime) : 'jour_an','lundi_paques',
+    // Jours fériés travaillés (donnent droit au Ft repas) : 'jour_an','lundi_paques',
     // 'fete_travail','victoire_1945','ascension','lundi_pentecote','fete_nationale',
     // 'assomption','toussaint','armistice','noel'
     'feries_travailles' => [],

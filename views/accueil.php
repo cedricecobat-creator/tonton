@@ -20,7 +20,7 @@ $moi = (int)$user['id'];
     <?php if ($fiche['totaux']['total_kms'] > 0): ?>
       <div><dt>Frais kilométriques</dt><dd><?= euros($fiche['totaux']['total_kms']) ?></dd></div>
     <?php endif; ?>
-    <div><dt>Primes repas</dt><dd><?= $fiche['nb_primes'] ?> × <?= euros($fiche['prime_montant']) ?></dd></div>
+    <div><dt>Ft repas</dt><dd><?= $fiche['nb_primes'] ?> × <?= euros($fiche['prime_montant']) ?></dd></div>
     <?php if ($fiche['regul']): ?>
       <div><dt><a href="<?= h(url('fiche', ['a' => $a, 'm' => $m])) ?>#regularisations">Régularisations mois précédents</a></dt><dd><?= euros($fiche['total_regul']) ?></dd></div>
     <?php endif; ?>

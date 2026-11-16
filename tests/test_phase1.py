@@ -291,7 +291,7 @@ r = conge(fabien, 2, d + '29', d + '29')
 check('régularisé' in r.text and 29 in totaux()['Fabien']['jours_primes'],
       'mois validé : congé du 29/09 régularisé sur octobre, fiche de septembre inchangée')
 r = action('prime', extra={'prime_montant': '5'})
-check('ne peut être changé' in r.text, 'mois validé : prime repas figée')
+check('ne peut être changé' in r.text, 'mois validé : Ft repas figé')
 t = totaux()
 check(t['Fabien']['definitif'] and abs(t['Fabien']['total'] - 225.96) < 0.001, 'totaux inchangés après validation')
 

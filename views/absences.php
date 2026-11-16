@@ -15,7 +15,7 @@ for ($j = 1; $j <= $nb; $j++) {
   <a class="retour" href="<?= h(url('gestion', ['a' => $a, 'm' => $m])) ?>">‹ Gestion</a>
   <h1>Congés et formations</h1>
 </div>
-<p class="muted">Seules les journées entières comptent : une demi-journée de congé ne supprime pas la prime repas. Touchez une case pour passer de « présent » à « congé », puis « formation ».</p>
+<p class="muted">Seules les journées entières comptent : une demi-journée de congé ne supprime pas le Ft repas. Touchez une case pour passer de « présent » à « congé », puis « formation ».</p>
 
 <div class="legende">
   <span><i class="case-abs"></i> Présent</span>
