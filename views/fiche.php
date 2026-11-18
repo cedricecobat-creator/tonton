@@ -22,7 +22,7 @@ $lienTicket = fn(array $d, string $texte): string =>
       <h1 class="fiche-nom"><?= h(mb_strtoupper(nom_complet($fiche['user']))) ?></h1>
       <p class="muted petit">Fiche de <?= h(mois_libelle($a, $m)) ?>
         <span class="statut-fiche statut-<?= $ouvert ? 'brouillon' : 'validee' ?>"><?= $ouvert ? 'Brouillon' : 'Validée' ?></span>
-        <?= $ouvert && !$fiche['definitif'] ? '· Ft repas calculés jusqu\'à aujourd\'hui' : '' ?></p>
+      </p>
     </div>
     <div class="fiche-total">
       <span class="muted petit">Montant à régler</span>
@@ -30,9 +30,8 @@ $lienTicket = fn(array $d, string $texte): string =>
     </div>
   </div>
   <p class="petit">
-    Avances CB perso <?= euros($fiche['total_avances']) ?> ·
-    Frais km <?= euros($t['total_kms']) ?> ·
-    Ft repas <?= $fiche['nb_primes'] ?> × <?= euros($fiche['prime_montant']) ?> = <?= euros($fiche['total_primes']) ?>
+    Avances CB perso et espèces <?= euros($fiche['total_avances']) ?> ·
+    Frais km <?= euros($t['total_kms']) ?>
     <?php if ($fiche['regul']): ?> · <a href="#regularisations">Régularisations <?= euros($fiche['total_regul']) ?></a><?php endif; ?>
   </p>
 </section>
@@ -48,18 +47,10 @@ $lienTicket = fn(array $d, string $texte): string =>
       if (in_array($j['motif'], ['conge', 'formation'], true)) {
           $classe = 'ligne-' . $j['motif'];
       }
-      // Notes : repas du midi (supprime la prime) et dépenses CB entreprise, avec lien vers le ticket
+      // Notes : dépenses CB entreprise (non remboursées), avec lien vers le ticket
       $notes = [];
-      foreach ($j['repas_midi_par'] as $r) {
-          $lib = (int)$r['equipe'] ? "Repas d'équipe" : 'Repas midi';
-          $notes[] = $lienTicket($r, (int)$r['user_id'] === (int)$fiche['user']['id']
-              ? $lib . ' ' . PAIEMENTS[$r['paiement']] . ' ' . euros($r['montant'])
-              : $lib . ' réglé par ' . $r['payeur_prenom'] . ' (' . PAIEMENTS[$r['paiement']] . ')');
-      }
       foreach ($j['cb_pro'] as $r) {
-          if ($r['categorie'] !== 'repas' || !$r['repas_midi']) {
-              $notes[] = $lienTicket($r, CATEGORIES[$r['categorie']] . ' CB entreprise ' . euros($r['montant']));
-          }
+          $notes[] = $lienTicket($r, CATEGORIES[$r['categorie']] . ' CB entreprise ' . euros($r['montant']));
       }
   ?>
     <tr class="<?= $classe ?>">
@@ -68,14 +59,13 @@ $lienTicket = fn(array $d, string $texte): string =>
         <?php foreach ($j['etiquettes'] as $e): ?><span class="etiquette-jour"><?= h($e) ?></span> <?php endforeach; ?>
         <?= implode(' / ', array_map(fn($tk) => $lienTicket($tk, $tk['objet']), $j['tickets'])) ?>
         <?php if ($notes): ?><div class="note-ligne"><?= implode(' · ', $notes) ?></div><?php endif; ?>
-        <?php if ($j['motif'] === 'a_venir'): ?><div class="note-ligne">À venir</div><?php endif; ?>
       </td>
       <td><?= h(implode(' / ', array_unique($j['lieux']))) ?></td>
       <td class="num"><?= $j['kms'] ? h(nombre_fr($j['kms'], 0)) : '' ?></td>
       <td class="num"><?= $j['coef'] ? h(nombre_fr($j['coef'], 3)) : '' ?></td>
       <td class="num"><?= euros($j['total_kms'], true) ?></td>
       <td class="num"><?= euros($j['peage'], true) ?></td>
-      <td class="num"><?= euros($j['repas'], true) ?><?= $j['prime'] ? '<span class="prime" title="Ft repas (forfait repas)">F</span>' : '' ?></td>
+      <td class="num"><?= euros($j['repas'], true) ?></td>
       <td class="num"><?= euros($j['carburant'], true) ?></td>
       <td class="num"><?= euros($j['autres'], true) ?></td>
       <td class="num fort"><?= euros($j['total'], true) ?></td>
@@ -97,37 +87,27 @@ $lienTicket = fn(array $d, string $texte): string =>
   </tfoot>
 </table>
 </div>
-<p class="aide"><span class="prime">F</span> Ft repas (forfait repas) de <?= euros($fiche['prime_montant']) ?> incluse dans la colonne Repas. Les dépenses payées avec la CB entreprise ne figurent pas dans les montants. Touchez un objet pour ouvrir le ticket.</p>
+<p class="aide">Seules les avances CB perso ou espèces et les frais km sont à rembourser. Les dépenses payées avec la CB entreprise ne figurent pas dans les montants. Touchez un objet pour ouvrir le ticket.</p>
 
 <?php if ($fiche['regul'] || est_admin($user)): ?>
 <section class="carte" id="regularisations">
   <h2 class="titre-section">Régularisations des mois précédents</h2>
-  <p class="petit muted">Tickets, congés et formations arrivés après la validation de leur mois : ils sont comptés sur cette fiche, sans modifier le mois d'origine déjà payé.</p>
+  <p class="petit muted">Tickets arrivés après la validation de leur mois : ils sont remboursés sur cette fiche, sans modifier le mois d'origine déjà payé. Les congés et formations déclarés en retard sont signalés pour information.</p>
   <?php if ($fiche['regul']): ?>
   <ul class="liste-regul">
   <?php foreach ($fiche['regul'] as $r): ?>
-    <li class="regul regul-<?= h($r['type']) ?><?= $r['compte'] || $r['type'] !== 'prime' ? '' : ' regul-off' ?>">
+    <li class="regul regul-<?= h($r['type']) ?>">
       <span class="regul-texte">
         <?php if ($r['type'] === 'ticket'): ?>
           <?= $lienTicket($r['depense'], $r['libelle']) ?>
         <?php else: ?>
           <?= h($r['libelle']) ?>
         <?php endif; ?>
-        <?php if ($r['type'] === 'prime' && !$r['actif']): ?><span class="petit muted"> — non déduit</span><?php endif; ?>
         <?php if ($r['type'] === 'libre'): ?><span class="petit muted"> — saisie par l'administrateur</span><?php endif; ?>
       </span>
-      <span class="regul-montant"><?= $r['compte'] ? euros($r['montant']) : ($r['type'] === 'prime' ? '<s>' . euros($r['montant']) . '</s>' : '') ?></span>
+      <span class="regul-montant"><?= $r['compte'] ? euros($r['montant']) : '' ?></span>
       <span class="regul-actions">
-        <?php if ($r['type'] === 'prime' && est_admin($user) && $ouvert): ?>
-          <form method="post" action="<?= h(url('regul_choix')) ?>" class="form-x">
-            <?= csrf_field() ?>
-            <input type="hidden" name="u" value="<?= (int)$fiche['user']['id'] ?>"><input type="hidden" name="a" value="<?= $a ?>"><input type="hidden" name="m" value="<?= $m ?>">
-            <input type="hidden" name="date_ref" value="<?= h($r['date_ref']) ?>">
-            <?php if (!$r['actif']): ?><input type="hidden" name="actif" value="1"><?php endif; ?>
-            <label class="case petit"><input type="checkbox" <?= $r['actif'] ? 'checked' : '' ?> data-auto-submit> déduire</label>
-            <noscript><button class="btn btn-lien">Changer</button></noscript>
-          </form>
-        <?php elseif ($r['type'] === 'absence' && $ouvert && (est_admin($user) || $estMoi)): ?>
+        <?php if ($r['type'] === 'absence' && $ouvert && (est_admin($user) || $estMoi)): ?>
           <form method="post" action="<?= h(url('regul_absence_suppr')) ?>" class="form-x" data-confirmer="Retirer ce jour ?">
             <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
             <button class="btn-x" aria-label="Retirer">×</button>
@@ -173,8 +153,8 @@ $lienTicket = fn(array $d, string $texte): string =>
 
 <section class="carte" id="conges">
   <h2 class="titre-section">Congés et formations<?= $estMoi ? '' : ' de ' . h($fiche['user']['prenom']) ?></h2>
-  <p class="petit muted">Journées entières seulement (une demi-journée ne supprime pas le Ft repas). Ces jours apparaissent sur la fiche et n'ont pas de Ft repas.
-    Un jour d'un mois déjà validé est régularisé sur le premier mois ouvert.</p>
+  <p class="petit muted">Pour information : ces jours apparaissent sur la fiche, sans effet sur les montants.
+    Un jour d'un mois déjà validé est signalé sur le premier mois ouvert.</p>
   <?php if ($periodes): ?>
     <ul class="rh-periodes">
     <?php foreach ($periodes as [$du, $au, $nb, $type]): ?>
@@ -223,6 +203,6 @@ $lienTicket = fn(array $d, string $texte): string =>
 
 <?php if (est_admin($user)): ?>
   <p class="actions">
-    <a class="btn btn-secondaire" href="<?= h(url('export_pdf', ['a' => $a, 'm' => $m, 'u' => $fiche['user']['id']])) ?>">PDF de cette fiche + justificatifs</a>
+    <a class="btn btn-secondaire" href="<?= h(url('export_pdf', ['a' => $a, 'm' => $m, 'u' => $fiche['user']['id']])) ?>">PDF de remboursement (tableau + justificatifs)</a>
   </p>
 <?php endif; ?>

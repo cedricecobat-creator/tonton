@@ -16,14 +16,8 @@ $m = (int)($argv[2] ?? 9);
 $out = [];
 foreach (associes() as $u) {
     $f = calcul_fiche($u, $a, $m);
-    $primes = [];
-    foreach ($f['jours'] as $d => $j) {
-        if ($j['prime']) {
-            $primes[] = (int)substr($d, 8);
-        }
-    }
     $out[$u['prenom']] = [
-        'total' => $f['totaux']['total'], 'nb_primes' => $f['nb_primes'], 'jours_primes' => $primes,
+        'total' => $f['totaux']['total'],
         'avances' => $f['total_avances'], 'kms' => $f['totaux']['total_kms'], 'cb_pro' => $f['total_cb_pro'],
         'definitif' => $f['definitif'], 'regul' => $f['total_regul'], 'nb_regul' => count($f['regul']),
         'regul_lignes' => array_map(fn($r) => [$r['type'], $r['date'], $r['montant'], $r['compte']], $f['regul']),

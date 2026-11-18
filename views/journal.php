@@ -3,7 +3,7 @@ $libelles = [
     'connexion' => 'Connexion', 'depense_ajout' => 'Ticket ajouté', 'depense_modif' => 'Ticket modifié',
     'depense_suppr' => 'Ticket supprimé', 'mois_termine' => 'Saisie terminée', 'mois_valider' => 'Mois validé',
     'mois_rouvrir' => 'Mois rouvert', 'mois_payer' => 'Mois payé', 'mois_transmettre' => 'Mois transmis',
-    'prime_montant' => 'Ft repas modifié', 'absence' => 'Absence', 'absences_import' => 'Import Odoo',
+    'prime_montant' => 'Ft repas modifié (ancien)', 'absence' => 'Absence', 'absences_import' => 'Import Odoo',
     'user_ajout' => 'Utilisateur ajouté', 'user_modif' => 'Utilisateur modifié', 'membre_ajout' => 'Membre ajouté',
     'membre_modif' => 'Membre modifié', 'mot_de_passe' => 'Mot de passe changé', 'installation' => 'Installation',
 ];

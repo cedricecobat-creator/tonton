@@ -85,8 +85,6 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
             $x->set($s, $l, $c, ['f' => "SUM($col$premiere:$col$derniere)", 'v' => $f['totaux'][$k]], Xlsx::EURO_GRAS);
         }
         $l += 2;
-        $x->set($s, $l, 2, 'Ft repas : ' . $f['nb_primes'] . ' jour(s) × ' . euros($f['prime_montant']) . ' = ' . euros($f['total_primes']), Xlsx::NORMAL);
-        $l++;
         if ($f['regul']) {
             $l++;
             $x->set($s, $l, 1, 'RÉGULARISATIONS DES MOIS PRÉCÉDENTS', Xlsx::GRAS);
@@ -95,7 +93,7 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
                 if ($r['date']) {
                     $x->set($s, $l, 1, Xlsx::serial($r['date']), Xlsx::DATE);
                 }
-                $x->set($s, $l, 2, $r['libelle'] . ($r['type'] === 'prime' && !$r['actif'] ? ' (non déduit)' : ''), 12);
+                $x->set($s, $l, 2, $r['libelle'], 12);
                 if ($r['compte']) {
                     $x->set($s, $l, 11, $r['montant'], Xlsx::EURO);
                 }
@@ -115,15 +113,15 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
 
     // Récapitulatif pour les virements
     $s = $x->feuille('RÉCAP VIREMENTS');
-    foreach ([28, 16, 16, 16, 18, 16, 4, 18] as $i => $w) {
+    foreach ([28, 16, 16, 18, 16, 4, 18] as $i => $w) {
         $x->largeur($s, $i + 1, $w);
     }
     $x->set($s, 1, 1, 'Récapitulatif ' . MOIS_FR[$m] . ' ' . $a, Xlsx::TITRE);
-    $hd = ['Associé', 'Avances perso (CB, espèces)', 'Frais km', 'Ft repas', 'Régularisations mois précédents', 'Total à régler'];
+    $hd = ['Associé', 'Avances perso (CB, espèces)', 'Frais km', 'Régularisations mois précédents', 'Total à régler'];
     foreach ($hd as $i => $t) {
         $x->set($s, 3, $i + 1, $t, Xlsx::ENTETE);
     }
-    $x->set($s, 3, 8, 'Tickets CB entreprise (info)', Xlsx::ENTETE);
+    $x->set($s, 3, 7, 'Tickets CB entreprise (info)', Xlsx::ENTETE);
     $x->hauteur($s, 3, 30);
     $l = 3;
     foreach ($fiches as $f) {
@@ -131,26 +129,25 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
         $x->set($s, $l, 1, nom_complet($f['user']), 12);
         $x->set($s, $l, 2, $f['total_avances'], Xlsx::EURO);
         $x->set($s, $l, 3, $f['totaux']['total_kms'], Xlsx::EURO);
-        $x->set($s, $l, 4, $f['total_primes'], Xlsx::EURO);
-        $x->set($s, $l, 5, $f['total_regul'], Xlsx::EURO);
-        $x->set($s, $l, 6, ['f' => "SUM(B$l:E$l)", 'v' => $f['totaux']['total']], Xlsx::EURO_GRAS);
-        $x->set($s, $l, 8, $f['total_cb_pro'], Xlsx::EURO);
+        $x->set($s, $l, 4, $f['total_regul'], Xlsx::EURO);
+        $x->set($s, $l, 5, ['f' => "SUM(B$l:D$l)", 'v' => $f['totaux']['total']], Xlsx::EURO_GRAS);
+        $x->set($s, $l, 7, $f['total_cb_pro'], Xlsx::EURO);
     }
     $l++;
     $x->set($s, $l, 1, 'TOTAL', 13);
-    foreach ([2, 3, 4, 5, 6, 8] as $c) {
+    foreach ([2, 3, 4, 5, 7] as $c) {
         $col = Xlsx::col($c);
         $v = 0.0;
         foreach ($fiches as $f) {
-            $v += [2 => $f['total_avances'], 3 => $f['totaux']['total_kms'], 4 => $f['total_primes'], 5 => $f['total_regul'],
-                6 => $f['totaux']['total'], 8 => $f['total_cb_pro']][$c];
+            $v += [2 => $f['total_avances'], 3 => $f['totaux']['total_kms'], 4 => $f['total_regul'],
+                5 => $f['totaux']['total'], 7 => $f['total_cb_pro']][$c];
         }
         $x->set($s, $l, $c, ['f' => "SUM({$col}4:$col" . ($l - 1) . ')', 'v' => round($v, 2)], Xlsx::EURO_GRAS);
     }
     $l += 2;
     $info = mois_info($a, $m);
     $x->set($s, $l, 1, 'Statut : ' . STATUTS[$info['statut']] . ($info['valide_at'] ? ' le ' . date('d/m/Y', strtotime($info['valide_at'] . ' UTC')) : ''), Xlsx::TEXTE_GRIS);
-    $x->set($s, $l + 1, 1, 'Les dépenses réglées avec la CB entreprise ne sont pas à rembourser ; leurs justificatifs figurent dans le PDF du mois.', Xlsx::TEXTE_GRIS);
+    $x->set($s, $l + 1, 1, 'Les dépenses réglées avec la CB entreprise ne sont pas à rembourser ; leurs justificatifs sont dans le ZIP du mois.', Xlsx::TEXTE_GRIS);
 
     // Récapitulatif salariés (pour la paie)
     $frh = fiches_rh_du_mois($a, $m);
@@ -186,240 +183,166 @@ function export_xlsx(int $a, int $m, ?int $uid = null): string
 }
 
 /* ------------------------------------------------------------------ */
-/* PDF : récapitulatif + fiches + tous les justificatifs du mois      */
+/* PDF de remboursement d'un associé : tableau + justificatifs        */
 /* ------------------------------------------------------------------ */
 
-function export_pdf(int $a, int $m, ?int $uid = null): string
+/**
+ * Lignes à rembourser à un associé pour un mois : ses tickets payés avec ses
+ * fonds (CB perso, espèces) ou ses frais km, puis les régularisations comptées
+ * (tickets tardifs, lignes libres). Les tickets CB entreprise n'y figurent pas.
+ * Chaque ligne : date, fournisseur, libelle, categorie, paiement, montant, depense (ou null).
+ */
+function lignes_remboursement(array $f): array
+{
+    $a = (int)$f['annee'];
+    $m = (int)$f['mois'];
+    [$debut, $fin] = mois_bornes($a, $m);
+    $out = [];
+    foreach (depenses_periode($debut, $fin, ['mois' => [$a, $m], 'user' => (int)$f['user']['id']]) as $d) {
+        if ($d['est_regul'] || $d['paiement'] === 'cb_pro') {
+            continue; // tickets tardifs : repris ci-dessous via les régularisations
+        }
+        $out[] = ligne_remboursement_ticket($d);
+    }
+    foreach ($f['regul'] as $r) {
+        if (!$r['compte']) {
+            continue;
+        }
+        if ($r['type'] === 'ticket') {
+            $l = ligne_remboursement_ticket($r['depense']);
+            $l['libelle'] .= ' — régularisation ' . mois_libelle(...mois_de_date($r['depense']['date_depense']));
+            $out[] = $l;
+        } else {
+            $out[] = ['date' => $r['date'], 'fournisseur' => '', 'libelle' => $r['libelle'], 'categorie' => 'Régularisation',
+                'paiement' => '', 'montant' => (float)$r['montant'], 'depense' => null];
+        }
+    }
+    return $out;
+}
+
+function ligne_remboursement_ticket(array $d): array
+{
+    $lib = trim((string)$d['objet']) ?: CATEGORIES[$d['categorie']];
+    if ($d['categorie'] === 'km' && $d['kms']) {
+        $lib .= ' — ' . nombre_fr((float)$d['kms'], 0) . ' km × ' . nombre_fr((float)$d['coef_km'], 3) . ' €/km';
+    }
+    return ['date' => $d['date_depense'], 'fournisseur' => lieu_complet($d), 'libelle' => $lib,
+        'categorie' => (int)$d['equipe'] ? "Repas d'équipe" : CATEGORIES[$d['categorie']],
+        'paiement' => PAIEMENTS[$d['paiement']] ?? '', 'montant' => (float)$d['montant'], 'depense' => $d];
+}
+
+/**
+ * PDF de remboursement d'un associé : d'abord le tableau des sommes à lui
+ * rembourser (sur plusieurs pages si besoin), puis une page par justificatif,
+ * dans l'ordre de la colonne N° du tableau.
+ */
+function pdf_remboursement(array $f, ?array $lignes = null): string
 {
     $pdf = new Pdf();
-    $fiches = fiches_du_mois($a, $m, $uid);
-    $fiches_rh = fiches_rh_du_mois($a, $m, $uid);
-    $info = mois_info($a, $m);
-    $titreMois = ucfirst(MOIS_FR[$m]) . ' ' . $a;
-    $societe = (string)(cfg('societe') ?? '');
-    $justifs = tickets_a_joindre($a, $m, $uid);
-    $total_pages_justif = count($justifs);
+    $lignes ??= lignes_remboursement($f);
+    $titreMois = ucfirst(MOIS_FR[(int)$f['mois']]) . ' ' . $f['annee'];
+    $ent = entreprise();
 
-    $statut = STATUTS[$info['statut']] . ($info['valide_at'] ? ' le ' . date('d/m/Y', strtotime($info['valide_at'] . ' UTC')) : '');
-
-    // 1. Récapitulatif
-    $pdf->page(false);
-    $pdf->police(true, 16);
-    $pdf->texte(15, 22, 'Notes de frais ecoBAT — ' . $titreMois);
-    $pdf->police(false, 10);
-    $pdf->couleur(90, 90, 90);
-    $pdf->texte(15, 29, trim($societe . ' · ' . $statut, ' ·'));
-    $pdf->couleur(0, 0, 0);
-
-    $y = 42;
-    $cols = [[15, 'Associé', 'L'], [92, 'Avances CB perso', 'R'], [114, 'Frais km', 'R'], [140, 'Ft repas', 'R'], [168, 'Régularisations', 'R'], [195, 'À régler', 'R']];
-    $pdf->rect(13, $y - 5, 184, 7.5, [221, 229, 238]);
-    $pdf->police(true, 9);
-    foreach ($cols as [$x, $t, $al]) {
-        $pdf->texte($x, $y, $t, $al);
+    $justifs = [];
+    foreach ($lignes as $i => $l) {
+        $d = $l['depense'];
+        if ($d && (chemin_justificatif($d['fichier']) || (int)$d['sans_justificatif'])) {
+            $justifs[] = $d;
+            $lignes[$i]['num'] = count($justifs);
+        }
     }
-    $tot = [0.0, 0.0, 0.0, 0.0, 0.0];
-    $pdf->police(false, 10);
-    foreach ($fiches as $f) {
-        $y += 8;
-        $vals = [$f['total_avances'], $f['totaux']['total_kms'], $f['total_primes'], $f['total_regul'], $f['totaux']['total']];
-        $pdf->texte(15, $y, nom_complet($f['user']));
-        foreach ($vals as $i => $v) {
-            $tot[$i] += $v;
-            if ($i === 4) {
-                $pdf->police(true, 10);
+
+    // colonnes : [titre, x, largeur, alignement]
+    $cols = [['N°', 15, 8, 'C'], ['Date', 23, 19, 'L'], ['Fournisseur', 42, 46, 'L'], ['Objet', 88, 45, 'L'],
+        ['Catégorie', 133, 24, 'L'], ['Paiement', 157, 18, 'L'], ['Montant', 175, 20, 'R']];
+    // écrit une ligne du tableau (texte sur plusieurs lignes si besoin) et retourne sa hauteur
+    $ecrire = function (array $vals, float $y) use ($pdf, $cols): float {
+        $n = 1;
+        foreach ($cols as $k => [, $x, $w, $al]) {
+            $lns = array_slice($pdf->lignes((string)$vals[$k], $w - 2.4), 0, 4) ?: [''];
+            $n = max($n, count($lns));
+            foreach ($lns as $i => $ln) {
+                $ln = $pdf->tronquer($ln, $w - 2.4); // mot trop long pour la colonne
+                $pdf->texte($al === 'R' ? $x + $w - 1.2 : ($al === 'C' ? $x + $w / 2 : $x + 1.2), $y + $i * 3.8, $ln, $al);
             }
-            $pdf->texte($cols[$i + 1][0], $y, euros($v), 'R');
-            $pdf->police(false, 10);
         }
-        $pdf->police(false, 8);
-        $pdf->couleur(110, 110, 110);
-        $pdf->texte(15, $y + 4, $f['nb_primes'] . ' Ft repas × ' . euros($f['prime_montant'])
-            . ' · ' . count($f['cb_pro']) . ' ticket(s) CB entreprise : ' . euros($f['total_cb_pro']) . ' (non remboursé)');
+        return 6 + ($n - 1) * 3.8;
+    };
+    $entete = function (bool $suite) use ($pdf, $f, $titreMois, $ent, $cols, $ecrire): float {
+        $pdf->page(false);
+        $pdf->police(true, 14);
+        $pdf->texte(15, 20, 'Remboursement des avances — ' . $titreMois . ($suite ? ' (suite)' : ''));
+        $pdf->police(false, 10);
+        $pdf->texte(15, 27, 'Associé : ' . mb_strtoupper(nom_complet($f['user'])));
+        $pdf->police(false, 8.5);
+        $pdf->couleur(90, 90, 90);
+        $pdf->texte(195, 27, trim($ent['nom'] . ($ent['siren'] ? ' · SIREN ' . $ent['siren_affiche'] : '')), 'R');
         $pdf->couleur(0, 0, 0);
-        $pdf->police(false, 10);
-        $y += 3;
-        $pdf->trait(13, $y + 2, 197, $y + 2, 0.1, 190);
-    }
-    if (count($fiches) > 1) {
-        $y += 9;
-        $pdf->police(true, 10);
-        $pdf->texte(15, $y, 'Total');
-        foreach ($tot as $i => $v) {
-            $pdf->texte($cols[$i + 1][0], $y, euros($v), 'R');
-        }
-        $pdf->trait(13, $y - 5.5, 197, $y - 5.5, 0.4, 0);
-    }
+        $pdf->rect(15, 36, 180, 7, [221, 229, 238]);
+        $pdf->police(true, 8);
+        $ecrire(array_column($cols, 0), 40.8);
+        $pdf->police(false, 8.5);
+        return 43;
+    };
 
-    if ($fiches_rh) {
-        $y += 14;
-        $pdf->police(true, 11);
-        $pdf->texte(15, $y, 'Salariés — éléments pour la paie');
-        $y += 8;
-        $ce = [[15, 'Salarié', 'L'], [100, 'Frais avec salaire', 'R'], [128, 'Heures sup', 'R'], [150, 'Congés', 'R'], [195, 'Fiche', 'R']];
-        $pdf->rect(13, $y - 5, 184, 7.5, [221, 229, 238]);
-        $pdf->police(true, 9);
-        foreach ($ce as [$x, $t, $al]) {
-            $pdf->texte($x, $y, $t, $al);
-        }
-        $pdf->police(false, 10);
-        foreach ($fiches_rh as $f) {
-            $y += 8;
-            $i = $f['info'];
-            $pdf->texte(15, $y, nom_complet($f['user']));
-            $pdf->texte(100, $y, euros($f['totaux']['paie']), 'R');
-            $pdf->texte(128, $y, nombre_fr($f['total_heures']) . ' h', 'R');
-            $pdf->texte(150, $y, array_sum(array_column($f['conges'], 2)) . ' j', 'R');
-            $pdf->texte(195, $y, $i['valide_resp_at'] ? 'validée' : ($i['valide_collab_at'] ? 'à valider' : 'en cours'), 'R');
-            $primes = array_filter([(int)$i['prime_qualite'] ? 'prime qualité' : '', (int)$i['prime_contributions'] ? 'prime contributions' : '']);
-            $pdf->police(false, 8);
-            $pdf->couleur(110, 110, 110);
-            $pdf->texte(15, $y + 4, ($primes ? implode(' + ', $primes) : 'aucune prime cochée')
-                . ($f['totaux']['attente'] + $f['totaux']['rembourse'] > 0 ? ' · remboursé à part : ' . euros($f['totaux']['attente'] + $f['totaux']['rembourse']) : ''));
-            $pdf->couleur(0, 0, 0);
-            $pdf->police(false, 10);
-            $y += 3;
-            $pdf->trait(13, $y + 2, 197, $y + 2, 0.1, 190);
-        }
+    $y = $entete(false);
+    $hl = 6;
+    $total = 0.0;
+    if (!$lignes) {
+        $pdf->texte(17, $y + 4.2, 'Aucune avance à rembourser ce mois-ci.');
+        $y += $hl;
     }
+    foreach ($lignes as $l) {
+        if ($y + 4 * $hl > 268) {
+            $y = $entete(true);
+        }
+        $y += $ecrire([$l['num'] ?? '', $l['date'] ? date_fr($l['date']) : '', $l['fournisseur'], $l['libelle'], $l['categorie'], $l['paiement'],
+            euros($l['montant'])], $y + 4.2);
+        $pdf->trait(15, $y, 195, $y, 0.1, 190);
+        $total += $l['montant'];
+    }
+    $pdf->trait(15, $y, 195, $y, 0.4, 0);
+    $y += 6;
+    $pdf->police(true, 11);
+    $pdf->texte(195, $y, 'Montant à rembourser : ' . euros(round($total, 2)), 'R');
 
-    $y += 16;
-    $pdf->police(false, 9);
+    $y += 10;
+    $pdf->police(false, 8.5);
     $pdf->couleur(70, 70, 70);
-    $nbPagesFiches = count($fiches) + 2 * count($fiches_rh);
     $notes = [
-        'Le montant à régler comprend les avances faites avec une carte personnelle, les frais kilométriques et les Ft repas (forfaits repas).',
-        'Régularisations : tickets et congés d\'un mois déjà validé, arrivés après sa clôture (remboursement, et retrait du Ft repas déjà versé ce jour-là).',
-        'Ft repas (forfait repas) : versé chaque jour ouvré sans ticket de repas du midi, hors jours fériés, congés et formations d\'une journée.',
-        'Les dépenses réglées avec la carte de l\'entreprise ne sont pas remboursées ; leurs justificatifs sont joints pour la comptabilité.',
-        'Justificatifs joints : ' . count($justifs) . ($justifs ? ' (pages ' . (2 + $nbPagesFiches) . ' à ' . (1 + $nbPagesFiches + $total_pages_justif) . ')' : '') . '.',
+        'Sommes avancées par l\'associé avec ses fonds personnels (CB perso, espèces) et frais kilométriques, à lui rembourser.',
+        'Les dépenses réglées avec la carte de l\'entreprise ne figurent pas ici : leurs justificatifs sont fournis à part.',
+        $justifs ? 'Justificatifs joints dans les pages suivantes, dans l\'ordre de la colonne N°.' : '',
     ];
-    foreach ($notes as $n) {
+    foreach (array_filter($notes) as $n) {
         foreach ($pdf->lignes($n, 180) as $ln) {
             $pdf->texte(15, $y, $ln);
-            $y += 4.6;
+            $y += 4.4;
         }
-        $y += 1.5;
     }
     $pdf->couleur(0, 0, 0);
 
-    // 2. Fiches mensuelles (une page paysage par associé)
-    foreach ($fiches as $f) {
-        pdf_fiche($pdf, $f, $titreMois);
-    }
-    foreach ($fiches_rh as $f) {
-        pdf_fiche_rh($pdf, $f);
-    }
-
-    // 3. Justificatifs : une page par ticket (texte lisible par les logiciels comptables + photo)
     foreach ($justifs as $i => $d) {
         pdf_ticket($pdf, $d, $i + 1);
     }
-
-    return $pdf->sortie('Notes de frais ' . $titreMois);
+    return $pdf->sortie('Remboursement ' . $titreMois . ' ' . nom_complet($f['user']));
 }
 
-function pdf_fiche(Pdf $pdf, array $f, string $titreMois): void
+/** PDF d'une personne (bouton des fiches) : remboursement pour un associé, fiche RH + tickets pour un salarié */
+function export_pdf(int $a, int $m, int $uid): string
 {
-    $pdf->page(true);
-    $pdf->police(true, 12);
-    $pdf->texte(10, 13, 'INFORMATIONS :');
-    $pdf->texte(287, 13, 'Mois : ' . mb_strtoupper($titreMois), 'R');
-    $pdf->police(false, 10);
-    $pdf->texte(10, 19, 'Nom : ' . mb_strtoupper(nom_complet($f['user'])));
-    $pdf->couleur(110, 110, 110);
-    $pdf->police(false, 8);
-    $pdf->texte(287, 19, 'Barème kilométrique : ' . nombre_fr($f['coef_km'], 3) . ' €/km', 'R');
-    $pdf->couleur(0, 0, 0);
-
-    // en-têtes
-    $x = 10;
-    $y = 24;
-    $hEntete = 9;
-    $pdf->rect(10, $y, 277, $hEntete, [221, 229, 238]);
-    $pdf->police(true, 7);
-    $pos = [];
-    foreach (COLONNES_FICHE as [$k, $t, , $w]) {
-        $pos[$k] = [$x, $w];
-        $lignes = $pdf->lignes($t, $w - 2);
-        $ly = $y + ($hEntete - count($lignes) * 3) / 2 + 2.4;
-        foreach ($lignes as $ln) {
-            $pdf->texte($x + $w / 2, $ly, $ln, 'C');
-            $ly += 3;
-        }
-        $x += $w;
+    foreach (fiches_du_mois($a, $m, $uid) as $f) {
+        return pdf_remboursement($f);
     }
-    $y += $hEntete;
-    $hl = min(4.6, 150 / count($f['jours']));
-    $pdf->police(false, 7);
-    foreach ($f['jours'] as $d => $j) {
-        $gris = $j['jour_semaine'] >= 6 || $j['motif'] === 'ferie';
-        if ($gris) {
-            $pdf->rect(10, $y, 277, $hl, [241, 241, 241]);
-        }
-        $ty = $y + $hl - 1.3;
-        $pdf->texte($pos['date'][0] + 1, $ty, date_fr($d, true));
-        $pdf->texte($pos['objet'][0] + 1, $ty, $pdf->tronquer(implode(' / ', $j['objets']), $pos['objet'][1] - 2));
-        $pdf->texte($pos['lieu'][0] + 1, $ty, $pdf->tronquer(implode(' / ', array_unique($j['lieux'])), $pos['lieu'][1] - 2));
-        $num = ['kms' => $j['kms'] ? nombre_fr($j['kms'], 0) : '', 'coef' => $j['coef'] ? nombre_fr($j['coef'], 3) : ''];
-        foreach (['total_kms', 'peage', 'repas', 'carburant', 'autres', 'total'] as $k) {
-            $num[$k] = euros($j[$k], true);
-        }
-        foreach ($num as $k => $v) {
-            $pdf->texte($pos[$k][0] + $pos[$k][1] - 1.2, $ty, $v, 'R');
-        }
-        $y += $hl;
-        $pdf->trait(10, $y, 287, $y, 0.1, 205);
+    $pdf = new Pdf();
+    foreach (fiches_rh_du_mois($a, $m, $uid) as $f) {
+        pdf_fiche_rh($pdf, $f);
     }
-    // traits verticaux
-    foreach ($pos as [$px, $pw]) {
-        $pdf->trait($px, 24, $px, $y, 0.1, 190);
+    foreach (tickets_a_joindre($a, $m, $uid) as $i => $d) {
+        pdf_ticket($pdf, $d, $i + 1);
     }
-    $pdf->trait(287, 24, 287, $y, 0.1, 190);
-
-    // total
-    $pdf->trait(10, $y, 287, $y, 0.4, 0);
-    $y += 5.2;
-    $pdf->police(true, 8);
-    $pdf->texte(11, $y, 'TOTAL');
-    $t = $f['totaux'];
-    $pdf->texte($pos['kms'][0] + $pos['kms'][1] - 1.2, $y, $t['kms'] ? nombre_fr($t['kms'], 0) : '', 'R');
-    foreach (['total_kms', 'peage', 'repas', 'carburant', 'autres', 'total_tableau'] as $k) {
-        $col = $k === 'total_tableau' ? 'total' : $k;
-        $pdf->texte($pos[$col][0] + $pos[$col][1] - 1.2, $y, euros($t[$k], true), 'R');
-    }
-    $pdf->trait(10, $y + 2, 287, $y + 2, 0.4, 0);
-
-    $y += 9;
-    $pdf->police(false, 8.5);
-    $pdf->texte(11, $y, 'Ft repas : ' . $f['nb_primes'] . ' jour(s) × ' . euros($f['prime_montant']) . ' = ' . euros($f['total_primes'])
-        . '     ·     Avances CB perso : ' . euros($f['total_avances']) . '     ·     Frais km : ' . euros($t['total_kms']));
-    if ($f['regul']) {
-        $y += 7;
-        if ($y + 5 * (count($f['regul']) + 2) > 200) {
-            $pdf->page(true);
-            $y = 15;
-        }
-        $pdf->police(true, 8.5);
-        $pdf->texte(11, $y, 'RÉGULARISATIONS DES MOIS PRÉCÉDENTS');
-        $pdf->police(false, 8);
-        foreach ($f['regul'] as $r) {
-            $y += 4.6;
-            $pdf->texte(11, $y, $r['date'] ? date_fr($r['date']) : '');
-            $pdf->texte(32, $y, $pdf->tronquer($r['libelle'] . ($r['type'] === 'prime' && !$r['actif'] ? ' (non déduit)' : ''), 220));
-            if ($r['compte']) {
-                $pdf->texte(287, $y, euros($r['montant']), 'R');
-            }
-        }
-        $y += 5;
-        $pdf->police(true, 8.5);
-        $pdf->texte(287, $y, 'Total des régularisations : ' . euros($f['total_regul']), 'R');
-        $y += 3;
-    }
-    $pdf->police(true, 11);
-    $pdf->texte(287, $y + 4, 'Montant à régler : ' . euros($t['total']), 'R');
+    return $pdf->sortie('Notes de frais ' . mois_libelle($a, $m));
 }
-
 
 /** Tickets à joindre : ceux qui ont une photo, et ceux saisis sans ticket */
 function tickets_a_joindre(int $a, int $m, ?int $uid = null): array
@@ -562,18 +485,14 @@ function pdf_un_ticket(array $d, int $num = 1): string
     return $pdf->sortie('Justificatif ' . date_fr($d['date_depense']) . ' ' . $d['lieu']);
 }
 
-/** PDF de la fiche mensuelle seule */
-function pdf_fiche_seule(array $f): string
-{
-    $pdf = new Pdf();
-    $titre = ucfirst(MOIS_FR[$f['mois']]) . ' ' . $f['annee'];
-    pdf_fiche($pdf, $f, $titre);
-    return $pdf->sortie('Fiche ' . $titre . ' ' . nom_complet($f['user']));
-}
-
 /**
- * ZIP du mois pour Pennylane : un dossier par personne avec sa fiche
- * (Excel + PDF) et un PDF par ticket. Retourne le chemin du fichier temporaire.
+ * ZIP du mois pour Pennylane, tous les fichiers à plat dans un seul dossier :
+ *  - pour chaque associé qui a des avances à rembourser, un PDF « Remboursement »
+ *    (tableau des sommes à rembourser, puis les justificatifs correspondants) ;
+ *    rien n'est généré pour un associé sans avance ;
+ *  - un PDF par ticket qui n'est pas dans un remboursement (CB entreprise surtout) ;
+ *  - pour les salariés (phase 2), la fiche RH en PDF.
+ * Retourne le chemin du fichier temporaire.
  */
 function export_zip(int $a, int $m, ?int $uid = null): string
 {
@@ -582,50 +501,48 @@ function export_zip(int $a, int $m, ?int $uid = null): string
     $tmp = tempnam(sys_get_temp_dir(), 'ndf');
     $zip = new ZipArchive();
     $zip->open($tmp, ZipArchive::OVERWRITE);
+    $zip->addEmptyDir($racine);
+    $deja = [];
+    $ajouter = function (string $base, string $contenu) use ($zip, $racine, &$deja): void {
+        $nomf = $base;
+        for ($k = 2; isset($deja[$nomf]); $k++) {
+            $nomf = "$base ($k)";
+        }
+        $deja[$nomf] = true;
+        $zip->addFromString("$racine/$nomf.pdf", $contenu);
+    };
 
-    // Personnes concernées : associés avec fiche + toute personne ayant payé un ticket
-    $tickets = tickets_a_joindre($a, $m, $uid);
-    $personnes = [];
+    // 1. Remboursements des associés (seulement s'il y a quelque chose à rembourser)
+    $dans_remboursement = [];
     foreach (fiches_du_mois($a, $m, $uid) as $f) {
-        $personnes[(int)$f['user']['id']] = ['user' => $f['user'], 'fiche' => $f, 'rh' => null, 'tickets' => []];
-    }
-    foreach (fiches_rh_du_mois($a, $m, $uid) as $f) {
-        $personnes[(int)$f['user']['id']] = ['user' => $f['user'], 'fiche' => null, 'rh' => $f, 'tickets' => []];
-    }
-    foreach ($tickets as $d) {
-        $pid = (int)$d['user_id'];
-        if (!isset($personnes[$pid])) {
-            $personnes[$pid] = ['user' => q1('SELECT * FROM {users} WHERE id = ?', [$pid]), 'fiche' => null, 'rh' => null, 'tickets' => []];
+        $lignes = lignes_remboursement($f);
+        if (!$lignes) {
+            continue;
         }
-        $personnes[$pid]['tickets'][] = $d;
+        foreach ($lignes as $l) {
+            if ($l['depense']) {
+                $dans_remboursement[(int)$l['depense']['id']] = true;
+            }
+        }
+        $ajouter(nom_fichier("Remboursement $mm " . mb_strtoupper(nom_complet($f['user']))), pdf_remboursement($f, $lignes));
     }
 
-    foreach ($personnes as $p) {
-        $nom = nom_fichier(mb_strtoupper(nom_complet($p['user'])));
-        $dossier = "$racine/$nom";
-        $zip->addEmptyDir($dossier);
-        if ($p['fiche']) {
-            $zip->addFromString("$dossier/Fiche $mm $nom.pdf", pdf_fiche_seule($p['fiche']));
-            $zip->addFromString("$dossier/Fiche $mm $nom.xlsx", export_xlsx($a, $m, (int)$p['user']['id']));
-        }
-        if ($p['rh']) {
-            $zip->addFromString("$dossier/Fiche RH $mm $nom.pdf", pdf_fiche_rh_seule($p['rh']));
-        }
-        $deja = [];
-        foreach ($p['tickets'] as $i => $d) {
-            $base = nom_fichier($d['date_depense'] . ' ' . trim($d['lieu'] . ' ' . $d['ville']) . ' ' . nombre_fr($d['montant']) . ' EUR'
-                . ([ 'cb_pro' => ' CB entreprise', 'cb_perso' => ' CB perso', 'especes' => ' Especes'][$d['paiement']] ?? '')
-                . (!empty($d['est_regul']) ? ' - regularisation' : ''));
-            $nomf = $base;
-            for ($k = 2; isset($deja[$nomf]); $k++) {
-                $nomf = "$base ($k)";
-            }
-            $deja[$nomf] = true;
-            $zip->addFromString("$dossier/Tickets/$nomf.pdf", pdf_un_ticket($d, $i + 1));
-        }
+    // 2. Fiches RH des salariés
+    foreach (fiches_rh_du_mois($a, $m, $uid) as $f) {
+        $ajouter(nom_fichier("Fiche RH $mm " . mb_strtoupper(nom_complet($f['user']))), pdf_fiche_rh_seule($f));
     }
-    if ($uid === null) {
-        $zip->addFromString("$racine/Tableau $mm PAYE EQUIPE.xlsx", export_xlsx($a, $m));
+
+    // 3. Un PDF par ticket hors remboursement (CB entreprise, tickets des salariés…)
+    $n = 0;
+    foreach (tickets_a_joindre($a, $m, $uid) as $d) {
+        if (isset($dans_remboursement[(int)$d['id']])) {
+            continue;
+        }
+        $base = nom_fichier($d['date_depense'] . ' ' . trim($d['lieu'] . ' ' . $d['ville']) . ' ' . nombre_fr($d['montant']) . ' EUR'
+            . ([ 'cb_pro' => ' CB entreprise', 'cb_perso' => ' CB perso', 'especes' => ' Especes'][$d['paiement']] ?? '')
+            . ' ' . mb_strtoupper($d['payeur_prenom'])
+            . (!empty($d['est_regul']) ? ' - regularisation' : ''));
+        $ajouter($base, pdf_un_ticket($d, ++$n));
     }
     $zip->close();
     return $tmp;

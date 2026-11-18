@@ -152,11 +152,9 @@ function mois_info(int $a, int $m): array
     if (!$r) {
         // Pas encore enregistré : valeurs par défaut (la ligne est créée à la première action)
         return ['annee' => $a, 'mois' => $m, 'statut' => 'ouvert',
-            'prime_montant' => (float)(cfg('prime_repas') ?? 4.75),
             'valide_at' => null, 'paye_at' => null, 'transmis_at' => null, 'existe' => false];
     }
     $r['existe'] = true;
-    $r['prime_montant'] = (float)$r['prime_montant'];
     return $r;
 }
 
@@ -164,8 +162,8 @@ function mois_set_statut(int $a, int $m, string $statut): void
 {
     $info = mois_info($a, $m);
     if (!$info['existe']) {
-        q('INSERT INTO {mois} (annee, mois, statut, prime_montant) VALUES (?, ?, ?, ?)',
-            [$a, $m, 'ouvert', $info['prime_montant']]);
+        // prime_montant : colonne héritée du Ft repas (supprimé), laissée à 0
+        q('INSERT INTO {mois} (annee, mois, statut, prime_montant) VALUES (?, ?, ?, 0)', [$a, $m, 'ouvert']);
     }
     $champ = ['valide' => 'valide_at', 'paye' => 'paye_at', 'transmis' => 'transmis_at'][$statut] ?? null;
     if ($champ) {
@@ -197,7 +195,7 @@ function mois_de_date(string $ymd): array
  * Rôles : un seul champ « role » ∈ {admin, associe, salarie}.
  *  - admin   : administre l'application ; pas de fiche, sauf option admin_fiche
  *              (fiche salarié validée par un associé, jamais par lui-même) ;
- *  - associe : fiche mensuelle avec prime repas ;
+ *  - associe : fiche mensuelle de remboursement des avances ;
  *  - salarie : fiche mensuelle RH (phase 2, module désactivable).
  */
 
@@ -206,7 +204,7 @@ function est_admin(?array $u): bool
     return ($u['role'] ?? '') === 'admin';
 }
 
-/** Associé : fiche mensuelle avec prime repas */
+/** Associé : fiche mensuelle de remboursement des avances */
 function est_associe(?array $u): bool
 {
     return ($u['role'] ?? '') === 'associe';
@@ -221,7 +219,7 @@ function est_salarie_fiche(?array $u): bool
     return $u['role'] === 'salarie' || ($u['role'] === 'admin' && (int)($u['admin_fiche'] ?? 0));
 }
 
-/** Associés actifs (fiche avec prime repas) */
+/** Associés actifs (fiche de remboursement des avances) */
 function associes(bool $actifs_seulement = true): array
 {
     return qall("SELECT * FROM {users} WHERE role = 'associe'" . ($actifs_seulement ? ' AND actif = 1' : '')
@@ -390,7 +388,7 @@ function depense_get(int $id): ?array
 }
 
 /**
- * L'utilisateur est-il compté comme présent à ce repas ? (pour la prime)
+ * L'utilisateur est-il compté comme présent à ce repas ?
  * Repas d'équipe : cocher « Équipe » coche les associés, que l'on peut décocher (associé absent) ;
  * seuls les participants cochés comptent.
  */
@@ -555,30 +553,24 @@ function absence_set(int $user_id, string $date, ?string $type, string $source =
 }
 
 /* ------------------------------------------------------------------ */
-/* Fiche mensuelle et prime repas                                     */
+/* Fiche mensuelle (remboursement des avances des associés)           */
 /* ------------------------------------------------------------------ */
 
 /**
  * Construit la fiche mensuelle d'un associé : une ligne par jour,
- * uniquement les sommes à lui régler (avances CB perso, km, primes repas).
- *
- * Règle de la prime repas, pour chaque jour du lundi au vendredi :
- *  - pas de prime si un ticket de repas du midi le mentionne parmi les participants
- *    (quel que soit le payeur et le moyen de paiement) ;
- *  - pas de prime les jours fériés ni les jours de congé / formation (journée entière) ;
- *  - sinon prime (montant fixé pour le mois).
+ * uniquement les sommes à lui régler (avances CB perso ou espèces, frais km).
+ * Le forfait repas (Ft repas) a été supprimé : il n'est pas applicable aux TNS.
+ * Les jours fériés, congés et formations restent affichés à titre d'information.
  */
 function calcul_fiche(array $user, int $a, int $m, bool $avec_regul = true): array
 {
     [$debut, $fin, $nb] = mois_bornes($a, $m);
     $info = mois_info($a, $m);
-    $prime = $info['prime_montant'];
     $uid = (int)$user['id'];
     $feries = feries($a);
     // les congés déclarés après la clôture ne modifient pas la fiche de leur mois
     $abs = absences_periode($debut, $fin, $uid, false)[$uid] ?? [];
-    $today = aujourdhui();
-    $definitif = $info['statut'] !== 'ouvert' || $fin < $today;
+    $definitif = $info['statut'] !== 'ouvert' || $fin < aujourdhui();
 
     // tickets datés du mois (les tickets tardifs sont traités en régularisation)
     $deps = array_values(array_filter(depenses_periode($debut, $fin, ['concerne' => $uid, 'mois' => [$a, $m]]),
@@ -591,7 +583,7 @@ function calcul_fiche(array $user, int $a, int $m, bool $avec_regul = true): arr
             'date' => $d, 'jour_semaine' => (int)(new DateTimeImmutable($d))->format('N'),
             'objets' => [], 'etiquettes' => [], 'tickets' => [], 'lieux' => [], 'kms' => 0.0, 'coef' => null, 'total_kms' => 0.0,
             'peage' => 0.0, 'repas' => 0.0, 'carburant' => 0.0, 'autres' => 0.0,
-            'prime' => 0.0, 'motif' => null, 'repas_midi_par' => [], 'cb_pro' => [], 'total' => 0.0,
+            'motif' => null, 'cb_pro' => [], 'total' => 0.0,
         ];
     }
 
@@ -599,12 +591,7 @@ function calcul_fiche(array $user, int $a, int $m, bool $avec_regul = true): arr
     foreach ($deps as $dep) {
         $d = $dep['date_depense'];
         $row = &$jours[$d];
-        $est_payeur = (int)$dep['user_id'] === $uid;
-        $participe = est_participant($dep, $user);
-        if ($dep['categorie'] === 'repas' && (int)$dep['repas_midi'] && $participe) {
-            $row['repas_midi_par'][] = $dep;
-        }
-        if (!$est_payeur) {
+        if ((int)$dep['user_id'] !== $uid) {
             unset($row);
             continue;
         }
@@ -641,7 +628,6 @@ function calcul_fiche(array $user, int $a, int $m, bool $avec_regul = true): arr
         unset($row);
     }
 
-    $nb_primes = 0;
     foreach ($jours as $d => &$row) {
         if ($row['jour_semaine'] >= 6) {
             $row['motif'] = 'weekend';
@@ -653,14 +639,6 @@ function calcul_fiche(array $user, int $a, int $m, bool $avec_regul = true): arr
             $row['motif'] = $abs[$d];
             array_unshift($row['objets'], $abs[$d] === 'conge' ? 'Congé' : 'Formation');
             $row['etiquettes'][] = $abs[$d] === 'conge' ? 'Congé' : 'Formation';
-        } elseif ($row['repas_midi_par']) {
-            $row['motif'] = 'repas';
-        } elseif (!$definitif && $d > $today) {
-            $row['motif'] = 'a_venir';
-        } else {
-            $row['prime'] = $prime;
-            $row['repas'] += $prime;
-            $nb_primes++;
         }
         $row['total'] = round($row['total_kms'] + $row['peage'] + $row['repas'] + $row['carburant'] + $row['autres'], 2);
     }
@@ -683,9 +661,8 @@ function calcul_fiche(array $user, int $a, int $m, bool $avec_regul = true): arr
     return [
         'user' => $user, 'annee' => $a, 'mois' => $m, 'info' => $info, 'definitif' => $definitif,
         'regul' => $regul, 'total_regul' => $total_regul,
-        'jours' => $jours, 'totaux' => $tot, 'nb_primes' => $nb_primes, 'prime_montant' => $prime,
-        'total_primes' => round($nb_primes * $prime, 2),
-        'total_avances' => round($tot['total_tableau'] - $tot['total_kms'] - $nb_primes * $prime, 2),
+        'jours' => $jours, 'totaux' => $tot,
+        'total_avances' => round($tot['total_tableau'] - $tot['total_kms'], 2),
         'cb_pro' => $cb_pro, 'total_cb_pro' => round(array_sum(array_column($cb_pro, 'montant')), 2),
         'coef_km' => (float)$user['coef_km'],
     ];

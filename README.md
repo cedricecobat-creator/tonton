@@ -5,7 +5,17 @@ Adresse : https://tonton.ecobat-habitat.com
 
 Tonton gère les fiches à partir d'**octobre 2026** (réglage `premier_mois`) : les mois précédents ont été
 traités avant Tonton et ne s'affichent pas ; un ticket ou un congé daté d'avant, saisi ensuite, est régularisé
-sur le premier mois ouvert (le Ft repas — forfait repas — de ce jour-là est présumé versé, l'admin peut décocher la déduction).
+sur le premier mois ouvert.
+
+La fiche mensuelle d'un associé sert uniquement à lui **rembourser ses avances** (CB perso, espèces) et ses frais
+kilométriques. Le forfait repas (Ft repas, 4,75 €) a été supprimé : il n'est pas applicable aux TNS.
+
+**Export pour le comptable** (Gestion > « ZIP pour Pennylane ») : un ZIP mensuel, tous les fichiers à plat :
+- un PDF « Remboursement » par associé **qui a des avances à rembourser** (rien sinon) : le tableau des sommes,
+  puis les justificatifs correspondants ;
+- un PDF par ticket payé avec la CB entreprise.
+
+Le tableau Excel reste disponible dans Gestion pour le suivi interne (il n'est pas dans le ZIP).
 
 Les commerçants habituels sont retenus dans un **carnet** (Admin > Commerçants) qui se remplit tout seul
 à chaque ticket : à la lecture d'un ticket, le commerçant est reconnu par son SIRET ou par son nom, et Tonton
@@ -84,7 +94,7 @@ La base de données est mise à niveau automatiquement à la première visite.
   ```
 
   et `node tests/ocr_analyse_test.js` pour la lecture des tickets (dates en lettres, annotations).
-  La configuration de test doit contenir `'premier_mois' => '2026-01'`. Ils rejouent septembre 2026 (Fabien 225,96 €, David 9,50 €) et vérifient les droits,
+  La configuration de test doit contenir `'premier_mois' => '2026-01'`. Ils rejouent septembre 2026 (Fabien 197,46 €, David 0,00 €) et vérifient les droits,
   l'alerte des 150 € HT, le verrouillage du mois et les exports.
 - Le dossier `tonton-kit/` (cahier des charges, code et documents de référence avec des données réelles)
   n'est **jamais** publié : il est exclu par `.gitignore`.

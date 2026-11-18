@@ -18,7 +18,7 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
   <h2 class="titre-section">Fiches du mois</h2>
   <div class="table-defile">
   <table class="tableau">
-    <thead><tr><th>Associé</th><th class="num">Tickets</th><th class="num">CB perso</th><th class="num">Km</th><th class="num">Ft repas</th><th class="num">Régul.</th><th class="num">À régler</th><th>Saisie</th><th></th></tr></thead>
+    <thead><tr><th>Associé</th><th class="num">Tickets</th><th class="num">CB perso</th><th class="num">Km</th><th class="num">Régul.</th><th class="num">À régler</th><th>Saisie</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($lignes as $f): ?>
       <tr>
@@ -26,7 +26,6 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
         <td class="num"><?= $f['nb_tickets'] ?></td>
         <td class="num"><?= euros($f['total_avances']) ?></td>
         <td class="num"><?= euros($f['totaux']['total_kms']) ?></td>
-        <td class="num"><?= $f['nb_primes'] ?> × <?= h(nombre_fr($f['prime_montant'])) ?></td>
         <td class="num"><?= $f['regul'] ? '<a href="' . h(url('fiche', $qs + ['u' => $f['user']['id']])) . '#regularisations">' . euros($f['total_regul']) . '</a>' : '—' ?></td>
         <td class="num fort"><?= euros($f['totaux']['total']) ?></td>
         <td><?= $f['soumis'] ? '<span class="badge badge-ok">terminée</span>' : '<span class="badge">en cours</span>' ?></td>
@@ -34,7 +33,7 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
       </tr>
     <?php endforeach; ?>
     </tbody>
-    <tfoot><tr><th colspan="6">Total à virer</th><td class="num fort"><?= euros($total) ?></td><td colspan="2"></td></tr></tfoot>
+    <tfoot><tr><th colspan="5">Total à virer</th><td class="num fort"><?= euros($total) ?></td><td colspan="2"></td></tr></tfoot>
   </table>
   </div>
   <p class="petit muted">Tickets CB entreprise du mois (non remboursés) : <?= euros($total_cbpro) ?> · <?= $nb_justifs ?> justificatif(s) au total.</p>
@@ -115,19 +114,12 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
   <div class="etape <?= $st !== 'ouvert' ? 'fait' : '' ?>">
     <div class="etape-titre"><span class="etape-num">2</span> Valider le mois</div>
     <?php if ($st === 'ouvert'): ?>
-      <p class="petit">La validation verrouille les tickets et fige les Ft repas.<?= $termine ? '' : ' <strong>Le mois n\'est pas terminé.</strong>' ?></p>
-      <form method="post" action="<?= h(url('gestion_action')) ?>" class="ligne-form">
-        <?= csrf_field() ?><input type="hidden" name="a" value="<?= $a ?>"><input type="hidden" name="m" value="<?= $m ?>"><input type="hidden" name="action" value="prime">
-        <label class="petit">Ft repas du mois
-          <span class="champ-euro"><input name="prime_montant" inputmode="decimal" value="<?= h(nombre_fr($info['prime_montant'])) ?>" size="5"></span>
-        </label>
-        <button class="btn btn-lien">Modifier</button>
-      </form>
+      <p class="petit">La validation verrouille les tickets.<?= $termine ? '' : ' <strong>Le mois n\'est pas terminé.</strong>' ?></p>
       <?= $action('valider', 'Valider ' . mois_libelle($a, $m), 'btn-primaire',
           $termine ? 'Valider le mois ? Les associés ne pourront plus modifier leurs tickets.' : "Le mois n'est pas terminé. Valider quand même ?") ?>
     <?php else: ?>
       <p class="petit">Validé le <?= h(date('d/m/Y', strtotime($info['valide_at'] . ' UTC'))) ?>.</p>
-      <?= $action('rouvrir', 'Rouvrir le mois', 'btn-lien', 'Rouvrir le mois ? Les Ft repas seront recalculés et les associés pourront de nouveau modifier leurs tickets.') ?>
+      <?= $action('rouvrir', 'Rouvrir le mois', 'btn-lien', 'Rouvrir le mois ? Les associés pourront de nouveau modifier leurs tickets.') ?>
     <?php endif; ?>
   </div>
 
@@ -143,11 +135,9 @@ $action = function (string $act, string $libelle, string $classe = 'btn-primaire
 
   <div class="etape <?= $st === 'transmis' ? 'fait' : '' ?>">
     <div class="etape-titre"><span class="etape-num">4</span> Transmettre au comptable</div>
-    <p class="petit">Le ZIP contient un dossier par associé : sa fiche (Excel et PDF) et un PDF par ticket, lisible par Pennylane. Le lien « ZIP » du tableau ne prend qu'un associé. Le PDF complet regroupe tout en un seul fichier.</p>
+    <p class="petit">Le ZIP contient, à plat : pour chaque associé ayant des avances à rembourser, un PDF « Remboursement » (tableau des tickets CB perso, espèces et frais km, puis leurs justificatifs) ; et un PDF par ticket payé avec la CB entreprise, lisible par Pennylane. Le lien « ZIP » du tableau ne prend qu'un associé.</p>
     <div class="actions">
       <a class="btn btn-primaire" href="<?= h(url('export_zip', $qs)) ?>">ZIP pour Pennylane</a>
-      <a class="btn btn-secondaire" href="<?= h(url('export_pdf', $qs)) ?>">PDF complet</a>
-      <a class="btn btn-lien" href="<?= h(url('export_pdf', $qs + ['voir' => 1])) ?>" target="_blank">Aperçu</a>
       <?php if ($st === 'paye'): ?><?= $action('transmettre', 'Marquer comme transmis', 'btn-primaire') ?><?php endif; ?>
     </div>
     <?php if ($info['transmis_at']): ?><p class="petit">Transmis le <?= h(date('d/m/Y', strtotime($info['transmis_at'] . ' UTC'))) ?>.</p><?php endif; ?>

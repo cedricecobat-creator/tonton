@@ -238,7 +238,6 @@ table.fiche thead th { white-space: normal; text-align: center; vertical-align: 
 table.fiche td { border-right: 1px solid #eef0f3; }
 .ligne-grise td { background: #f3f3f3; color: #7a828c; }
 .note-ligne { font-size: .72rem; color: var(--encre-2); margin-top: .1rem; }
-.prime { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 3px; border-radius: 4px; background: var(--primaire-clair); color: var(--primaire); font-size: .6rem; font-weight: 700; vertical-align: 1px; }
 
 .onglets { display: flex; gap: .35rem; margin: 0 0 1rem; overflow-x: auto; }
 .onglets a { padding: .45rem .9rem; border-radius: 99px; background: var(--carte); box-shadow: var(--ombre); text-decoration: none; font-weight: 500; white-space: nowrap; }
@@ -431,8 +430,6 @@ input[type=date] { min-width: 0; max-width: 100%; }
 .liste-regul { list-style: none; padding: 0; margin: .4rem 0; }
 .regul { display: grid; grid-template-columns: 1fr auto auto; gap: .6rem; align-items: center; padding: .55rem 0; border-bottom: 1px solid var(--ligne); font-size: .92rem; }
 .regul-montant { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.regul-prime .regul-montant { color: var(--danger); }
-.regul-off .regul-montant { color: var(--encre-2); font-weight: 400; }
 .regul-info .regul-texte, .regul-absence .regul-texte { color: var(--encre-2); }
 .regul-actions .case { margin: 0; white-space: nowrap; }
 .regul-total { text-align: right; margin: .6rem 0 0; }

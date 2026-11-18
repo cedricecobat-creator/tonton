@@ -11,8 +11,7 @@ declare(strict_types=1);
  *
  * Sur la fiche du mois de rattachement, une section « Régularisations » reprend :
  *  - les tickets tardifs payés par la personne (remboursés ce mois-là) ;
- *  - pour chaque jour concerné où la prime repas avait été versée, une ligne de
- *    déduction (une seule par jour et par personne), que l'admin peut décocher ;
+ *  - les congés / formations déclarés en retard (pour information) ;
  *  - les lignes libres saisies par l'admin.
  */
 
@@ -51,55 +50,10 @@ function mois_index(int $a, int $m): int
     return $a * 12 + $m;
 }
 
-/** La prime repas a-t-elle été versée à cet associé ce jour-là, sur la fiche de son mois ? Retourne le montant (0 sinon). */
-function prime_versee(array $user, string $ymd): float
-{
-    static $cache = [];
-    [$a, $m] = mois_de_date($ymd);
-    $cle = $user['id'] . '-' . $a . '-' . $m;
-    if (!isset($cache[$cle])) {
-        $cache[$cle] = calcul_fiche($user, $a, $m, false);
-    }
-    return (float)($cache[$cle]['jours'][$ymd]['prime'] ?? 0);
-}
-
-/**
- * Éléments tardifs qui concernent la prime d'un associé un jour donné :
- * repas du midi auxquels il a participé, et ses congés / formations.
- * Retourne [[mois_index de rattachement, description], …]
- */
-function elements_tardifs_jour(array $user, string $ymd): array
-{
-    $uid = (int)$user['id'];
-    $out = [];
-    $deps = qall("SELECT id FROM {depenses} WHERE date_depense = ? AND regul_annee IS NOT NULL
-                  AND categorie = 'repas' AND repas_midi = 1", [$ymd]);
-    foreach ($deps as $r) {
-        $d = depense_get((int)$r['id']);
-        if ($d && est_participant($d, $user)) {
-            $lib = ((int)$d['equipe'] ? "repas d'équipe" : 'repas du midi')
-                . ((int)$d['user_id'] === $uid ? '' : ' réglé par ' . $d['payeur_prenom']) . (avant_tonton(...mois_de_date($ymd)) ? ' saisi dans Tonton' : ' saisi après la clôture');
-            $out[] = [mois_index((int)$d['regul_annee'], (int)$d['regul_mois']), $lib, (int)$d['id']];
-        }
-    }
-    $abs = q1('SELECT * FROM {absences} WHERE user_id = ? AND date_absence = ? AND regul_annee IS NOT NULL', [$uid, $ymd]);
-    if ($abs) {
-        $out[] = [mois_index((int)$abs['regul_annee'], (int)$abs['regul_mois']),
-            ($abs['type'] === 'conge' ? 'congé déclaré' : 'formation déclarée') . (avant_tonton(...mois_de_date($ymd)) ? ' dans Tonton' : ' après la clôture'), null];
-    }
-    return $out;
-}
-
-function regul_choix_actif(int $uid, string $ymd): bool
-{
-    $r = q1('SELECT actif FROM {regul_choix} WHERE user_id = ? AND date_ref = ?', [$uid, $ymd]);
-    return $r ? (bool)(int)$r['actif'] : true;
-}
-
 /**
  * Lignes de régularisation de la fiche d'une personne pour un mois.
- * Chaque ligne : type (ticket | prime | absence | libre), date, libelle, montant,
- * actif, compte (compté dans le total), et selon le type depense / id / date_ref.
+ * Chaque ligne : type (ticket | absence | libre), date, libelle, montant,
+ * actif, compte (compté dans le total), et selon le type depense / id.
  */
 function regularisations_fiche(array $user, int $a, int $m): array
 {
@@ -108,7 +62,6 @@ function regularisations_fiche(array $user, int $a, int $m): array
 
     // 1. Tickets tardifs rattachés à ce mois
     $tardifs = qall('SELECT id FROM {depenses} WHERE regul_annee = ? AND regul_mois = ? ORDER BY date_depense, id', [$a, $m]);
-    $jours_prime = [];
     foreach ($tardifs as $r) {
         $d = depense_get((int)$r['id']);
         if (!$d) {
@@ -124,9 +77,6 @@ function regularisations_fiche(array $user, int $a, int $m): array
                 'montant' => $rembourse ? (float)$d['montant'] : 0.0, 'actif' => true, 'compte' => $rembourse,
             ];
         }
-        if ($d['categorie'] === 'repas' && (int)$d['repas_midi'] && est_participant($d, $user)) {
-            $jours_prime[$d['date_depense']] = true;
-        }
     }
 
     // 2. Congés / formations déclarés en retard, rattachés à ce mois
@@ -139,39 +89,9 @@ function regularisations_fiche(array $user, int $a, int $m): array
                 . (avant_tonton(...mois_de_date($abs['date_absence'])) ? ' (mois antérieur à Tonton)' : ' après la clôture'),
             'montant' => 0.0, 'actif' => true, 'compte' => false,
         ];
-        $jours_prime[$abs['date_absence']] = true;
     }
 
-    // 3. Déduction de la prime repas déjà versée (associés seulement, une fois par jour)
-    if (est_associe($user)) {
-        $ici = mois_index($a, $m);
-        foreach (array_keys($jours_prime) as $ymd) {
-            $elements = elements_tardifs_jour($user, $ymd);
-            $premier = min(array_map(fn($e) => $e[0], $elements) ?: [$ici]);
-            if ($premier < $ici) {
-                continue; // déjà régularisé sur un mois précédent
-            }
-            $prime = prime_versee($user, $ymd);
-            $motifs = implode(', ', array_unique(array_map(fn($e) => $e[1], array_filter($elements, fn($e) => $e[0] === $ici))));
-            if ($prime > 0) {
-                $actif = regul_choix_actif($uid, $ymd);
-                $lignes[] = [
-                    'type' => 'prime', 'date' => $ymd, 'date_ref' => $ymd,
-                    'libelle' => 'Ft repas du ' . date_fr($ymd, true)
-                        . (avant_tonton(...mois_de_date($ymd)) ? ' présumé versé hors Tonton (' : ' déjà versé (') . $motifs . ')',
-                    'montant' => -$prime, 'actif' => $actif, 'compte' => $actif,
-                ];
-            } else {
-                $lignes[] = [
-                    'type' => 'info', 'date' => $ymd,
-                    'libelle' => 'Pas de Ft repas versé le ' . date_fr($ymd, true) . ' : rien à déduire',
-                    'montant' => 0.0, 'actif' => true, 'compte' => false,
-                ];
-            }
-        }
-    }
-
-    // 4. Lignes libres saisies par l'administrateur
+    // 3. Lignes libres saisies par l'administrateur
     foreach (qall('SELECT * FROM {regul_libres} WHERE user_id = ? AND annee = ? AND mois = ? ORDER BY id', [$uid, $a, $m]) as $l) {
         $lignes[] = [
             'type' => 'libre', 'date' => $l['date_ref'], 'id' => (int)$l['id'],
@@ -179,7 +99,7 @@ function regularisations_fiche(array $user, int $a, int $m): array
         ];
     }
 
-    usort($lignes, fn($x, $y) => [($x['date'] ?? '9999'), $x['type'] === 'prime' ? 1 : 0] <=> [($y['date'] ?? '9999'), $y['type'] === 'prime' ? 1 : 0]);
+    usort($lignes, fn($x, $y) => ($x['date'] ?? '9999') <=> ($y['date'] ?? '9999'));
     return $lignes;
 }
 

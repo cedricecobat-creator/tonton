@@ -44,6 +44,17 @@ def flashes(html):
     return ' | '.join(re.findall(r'class="alerte alerte-\w+" role="status">([^<]+)', html))
 
 
+def texte_pdf(contenu):
+    import zlib
+    txt = []
+    for m in re.finditer(rb'stream\n(.*?)\nendstream', contenu, re.S):
+        try:
+            txt.append(zlib.decompress(m.group(1)).decode('cp1252', 'replace'))
+        except zlib.error:
+            pass
+    return '\n'.join(txt)
+
+
 def session(email, pw, attendu=True):
     s = requests.Session()
     t = tok(s.get(B, params={'p': 'login'}).text)
@@ -184,14 +195,15 @@ def totaux(a=2026, m=9):
 
 
 t = totaux()
-check(abs(t['Fabien']['total'] - 225.96) < 0.001 and t['Fabien']['jours_primes'] == [2, 9, 10, 17, 23, 29],
-      f"NON-RÉGRESSION Fabien 225,96 € (6 primes : 2, 9, 10, 17, 23, 29) -> {t['Fabien']['total']} {t['Fabien']['jours_primes']}")
-check(abs(t['David']['total'] - 9.50) < 0.001 and t['David']['jours_primes'] == [8, 10],
-      f"NON-RÉGRESSION David 9,50 € (2 primes : 8, 10) -> {t['David']['total']} {t['David']['jours_primes']}")
+check(abs(t['Fabien']['total'] - 197.46) < 0.001 and abs(t['Fabien']['avances'] - 197.46) < 0.001,
+      f"NON-RÉGRESSION Fabien 197,46 € (avances CB perso seules, plus de Ft repas) -> {t['Fabien']['total']}")
+check(abs(t['David']['total']) < 0.001, f"NON-RÉGRESSION David 0,00 € (aucune avance, plus de Ft repas) -> {t['David']['total']}")
 
 # La fiche affichée à Fabien montre le même total
 f = fabien.get(B, params={'p': 'fiche', 'a': 2026, 'm': 9}).text
-check('225,96' in f, 'fiche de Fabien affiche 225,96 €')
+check('197,46' in f, 'fiche de Fabien affiche 197,46 €')
+check('Ft repas' not in f and 'class="prime"' not in f, 'fiche : plus aucune mention du Ft repas')
+check('Ft repas' not in admin.get(B, params={'p': 'gestion', 'a': 2026, 'm': 9}).text, 'gestion : plus de Ft repas (ni colonne, ni montant du mois)')
 
 # ---------------------------------------------------------------- droits
 dep_darty = re.search(r'p=depense&amp;id=(\d+)"(?:(?!</a>).)*?DARTY', fabien.get(B, params={'p': 'accueil', 'a': 2026, 'm': 9}).text, re.S)
@@ -207,13 +219,13 @@ r = david.post(B + '?p=utilisateur_save', data={'csrf': david.csrf, 'id': 0, 'pr
                                                 'email': 'pirate@test.local', 'role': 'admin', 'coef_km': '1', 'actif': 1, 'password': 'pirate123456'})
 check(r.status_code == 403, "associé : création d'un compte refusée")
 f = david.get(B, params={'p': 'fiche', 'a': 2026, 'm': 9, 'u': 2}).text
-check('9,50' in f and '225,96' not in f, "David ne peut pas afficher la fiche de Fabien (on lui montre la sienne)")
+check('DAVID TEST' in f and '197,46' not in f, "David ne peut pas afficher la fiche de Fabien (on lui montre la sienne)")
 r = ajout(david, d + '05', 'peage', 12, 'cb_perso', [], 'AUTOROUTE', 'BIRIATOU', midi=False, extra={'payeur_id': 2})
 dav = david.get(B, params={'p': 'accueil', 'a': 2026, 'm': 9}).text
 check(r['ok'] and 'AUTOROUTE' in dav, "un associé ne peut pas saisir au nom d'un autre (payeur ignoré)")
 check('RESTAURANT LE MIDI' in dav, 'David voit les repas réglés par Fabien auxquels il a participé')
 r = admin.get(B, params={'p': 'fiche', 'a': 2026, 'm': 9, 'u': 2}).text
-check('225,96' in r, "l'admin voit la fiche de Fabien")
+check('197,46' in r, "l'admin voit la fiche de Fabien")
 r = requests.post(B + '?p=depense_save', data={'csrf': 'x'})
 check(r.status_code in (302, 400) or 'Session' in r.text, 'action sans session refusée')
 r = fabien.post(B + '?p=depense_save', data={'csrf': 'mauvais', 'id': 0})
@@ -247,18 +259,18 @@ def conge(s, u, du, au, type_='conge', action='ajouter'):
                                                  'type': type_, 'action': action})
 
 
-avant = totaux(2026, 10)['Fabien']['nb_primes']
+avant = totaux(2026, 10)['Fabien']['total']
 r = conge(fabien, 2, '2026-10-14', '2026-10-18')
 check('3 jour(s) de congé' in r.text, "associé : ajout de ses congés du 14 au 18/10 (3 jours ouvrés, week-end exclu) " + flashes(r.text))
-check(totaux(2026, 10)['Fabien']['nb_primes'] == avant - 3, 'congés : 3 primes repas retirées')
+check(abs(totaux(2026, 10)['Fabien']['total'] - avant) < 0.001, 'congés : pour information, sans effet sur le montant')
 f = fabien.get(B, params={'p': 'fiche', 'a': 2026, 'm': 10}).text
 check('ligne-conge' in f and 'du mer. 14/10/2026 au ven. 16/10/2026' in f, 'congés : notés sur la fiche mensuelle')
 r = conge(david, 2, '2026-10-20', '2026-10-20')
 check(r.status_code == 403, "un associé ne peut pas saisir les congés d'un autre")
 r = conge(admin, 3, '2026-10-21', '', 'formation')
-check('1 jour(s) de formation' in r.text and 21 not in totaux(2026, 10)['David']['jours_primes'], "admin : formation d'une journée pour David, sans prime")
+check('1 jour(s) de formation' in r.text, "admin : formation d'une journée pour David")
 r = conge(fabien, 2, '2026-10-15', '2026-10-15', action='retirer')
-check(totaux(2026, 10)['Fabien']['nb_primes'] == avant - 2, 'associé : retrait d’un jour de congé (prime rétablie)')
+check('1 jour(s) de congé retiré' in r.text, 'associé : retrait d’un jour de congé')
 m_lien = re.search(r'class="lien-ticket" href="index\.php\?p=depense&amp;id=(\d+)&amp;retour=fiche&amp;ru=2"', f)
 check(m_lien is not None, 'fiche : les objets mènent au ticket')
 if m_lien:
@@ -288,12 +300,10 @@ check('impossible' in r.text, 'mois validé : suppression refusée')
 r = admin.post(B + '?p=absence_set', data={'csrf': admin.csrf, 'user_id': 2, 'date': d + '17', 'type': 'conge'}, headers={'X-Requested-With': 'fetch'})
 check(r.status_code == 400, 'mois validé : absences verrouillées')
 r = conge(fabien, 2, d + '29', d + '29')
-check('régularisé' in r.text and 29 in totaux()['Fabien']['jours_primes'],
-      'mois validé : congé du 29/09 régularisé sur octobre, fiche de septembre inchangée')
-r = action('prime', extra={'prime_montant': '5'})
-check('ne peut être changé' in r.text, 'mois validé : Ft repas figé')
+check('signalé' in r.text and abs(totaux()['Fabien']['total'] - 197.46) < 0.001,
+      'mois validé : congé du 29/09 signalé sur octobre, fiche de septembre inchangée')
 t = totaux()
-check(t['Fabien']['definitif'] and abs(t['Fabien']['total'] - 225.96) < 0.001, 'totaux inchangés après validation')
+check(t['Fabien']['definitif'] and abs(t['Fabien']['total'] - 197.46) < 0.001, 'totaux inchangés après validation')
 
 # ---------------------------------------------------------------- régularisations (ticket / congé après clôture)
 import openpyxl
@@ -303,42 +313,43 @@ check(not r['ok'] and r.get('confirmRegul') and 'octobre 2026' in r['error'], 't
 r = ajout(fabien, d + '17', 'repas', 30, 'cb_perso', [FC, DP], 'BRASSERIE TARDIVE', 'BAYONNE', extra={'confirm_regul': 1})
 check(r['ok'] and 'm=10' in r.get('redirect', ''), 'ticket tardif enregistré, rattaché à octobre')
 t9 = totaux(2026, 9)
-check(abs(t9['Fabien']['total'] - 225.96) < 0.001 and 17 in t9['Fabien']['jours_primes'], 'septembre inchangé (225,96 €, prime du 17 conservée)')
+check(abs(t9['Fabien']['total'] - 197.46) < 0.001, 'septembre inchangé (197,46 €)')
 t10 = totaux(2026, 10)
-check(abs(t10['Fabien']['total'] - (oct_avant['Fabien']['total'] + 30 - 4.75)) < 0.001,
-      f"octobre Fabien : + 30,00 € remboursés − 4,75 € de prime -> {oct_avant['Fabien']['total']} → {t10['Fabien']['total']}")
-check(abs(t10['David']['total'] - oct_avant['David']['total']) < 0.001, 'octobre David : rien à déduire (en congé le 17/09, pas de prime versée)')
+check(abs(t10['Fabien']['total'] - (oct_avant['Fabien']['total'] + 30)) < 0.001,
+      f"octobre Fabien : + 30,00 € remboursés, sans déduction de Ft repas -> {oct_avant['Fabien']['total']} → {t10['Fabien']['total']}")
+check(abs(t10['David']['total'] - oct_avant['David']['total']) < 0.001, 'octobre David : inchangé (repas payé par Fabien)')
 r = conge(fabien, 2, '2026-09-23', '2026-09-23')
 t10b = totaux(2026, 10)
-check('régularisé' in r.text and abs(t10b['Fabien']['total'] - (t10['Fabien']['total'] - 4.75)) < 0.001,
-      'congé du 23/09 déclaré après clôture : − 4,75 € sur octobre')
-check(23 in totaux(2026, 9)['Fabien']['jours_primes'], 'septembre inchangé après le congé tardif')
+check('signalé' in r.text and abs(t10b['Fabien']['total'] - t10['Fabien']['total']) < 0.001,
+      'congé du 23/09 déclaré après clôture : signalé sur octobre, sans effet sur le montant')
 r = ajout(fabien, d + '23', 'repas', 18, 'cb_pro', [FC], 'SNACK TARDIF', 'PAU', extra={'confirm_regul': 1})
 check(r['ok'] and abs(totaux(2026, 10)['Fabien']['total'] - t10b['Fabien']['total']) < 0.001,
-      'deuxième élément tardif le même jour : pas de double déduction')
-r = fabien.post(B + '?p=regul_choix', data={'csrf': fabien.csrf, 'u': 2, 'a': 2026, 'm': 10, 'date_ref': '2026-09-17'})
-check(r.status_code == 403, "un associé ne peut pas décocher une déduction")
+      'ticket CB entreprise tardif : rien à rembourser')
 r = admin.post(B + '?p=regul_choix', data={'csrf': admin.csrf, 'u': 2, 'a': 2026, 'm': 10, 'date_ref': '2026-09-17'})
-check(abs(totaux(2026, 10)['Fabien']['total'] - (t10b['Fabien']['total'] + 4.75)) < 0.001, 'admin : déduction du 17/09 décochée (+ 4,75 €)')
-r = admin.post(B + '?p=regul_choix', data={'csrf': admin.csrf, 'u': 2, 'a': 2026, 'm': 10, 'date_ref': '2026-09-17', 'actif': 1})
-check(abs(totaux(2026, 10)['Fabien']['total'] - t10b['Fabien']['total']) < 0.001, 'admin : déduction recochée')
+check(abs(totaux(2026, 10)['Fabien']['total'] - t10b['Fabien']['total']) < 0.001, 'ancienne action « déduction du Ft repas » supprimée')
 r = david.post(B + '?p=regul_libre', data={'csrf': david.csrf, 'u': 3, 'a': 2026, 'm': 10, 'libelle': 'x', 'montant': '5', 'signe': 'plus'})
 check(r.status_code == 403, 'un associé ne peut pas ajouter de ligne libre')
 r = admin.post(B + '?p=regul_libre', data={'csrf': admin.csrf, 'u': 2, 'a': 2026, 'm': 10, 'libelle': 'Péage du 18/09 oublié',
                                            'montant': '12,50', 'signe': 'plus', 'date_ref': '2026-09-18'})
 check(abs(totaux(2026, 10)['Fabien']['total'] - (t10b['Fabien']['total'] + 12.5)) < 0.001, 'admin : ligne libre + 12,50 €')
 f10 = fabien.get(B, params={'p': 'fiche', 'a': 2026, 'm': 10}).text
-check('id="regularisations"' in f10 and 'Brouillon' in f10 and 'BRASSERIE TARDIVE' in f10 and 'data-auto-submit' not in f10,
-      "fiche d'octobre : section régularisations, statut Brouillon, sans case à cocher pour l'associé")
-check('data-auto-submit' in admin.get(B, params={'p': 'fiche', 'a': 2026, 'm': 10, 'u': 2}).text, "fiche d'octobre côté admin : case « déduire »")
+check('id="regularisations"' in f10 and 'Brouillon' in f10 and 'BRASSERIE TARDIVE' in f10 and 'Ft repas' not in f10,
+      "fiche d'octobre : section régularisations, statut Brouillon, sans Ft repas")
+check('data-auto-submit' not in admin.get(B, params={'p': 'fiche', 'a': 2026, 'm': 10, 'u': 2}).text, "fiche d'octobre côté admin : plus de case « déduire »")
 check('Validée' in fabien.get(B, params={'p': 'fiche', 'a': 2026, 'm': 9}).text, 'fiche de septembre : statut Validée')
 check('régularisation septembre' in fabien.get(B, params={'p': 'accueil', 'a': 2026, 'm': 10}).text, "liste d'octobre : badge « régularisation septembre »")
 z10 = zipfile.ZipFile(io.BytesIO(admin.get(B, params={'p': 'export_zip', 'a': 2026, 'm': 10}).content))
-check(any('2026-09-17 BRASSERIE TARDIVE' in n and 'regularisation' in n for n in z10.namelist()), "ZIP d'octobre : contient le ticket du 17/09 (régularisation)")
+n10 = z10.namelist()
+remb10 = [n for n in n10 if 'Remboursement' in n]
+check(remb10 == ['10-26 Notes de frais/Remboursement 10-26 FABIEN TEST.pdf'],
+      f"ZIP d'octobre : remboursement de Fabien seulement (David n'a aucune avance) {remb10}")
+check(remb10 and 'BRASSERIE TARDIVE' in texte_pdf(z10.read(remb10[0])), "ZIP d'octobre : ticket CB perso tardif du 17/09 dans le remboursement de Fabien")
+check(any('2026-09-23 SNACK TARDIF' in n and 'CB entreprise' in n and 'regularisation' in n for n in n10),
+      "ZIP d'octobre : ticket CB entreprise tardif en PDF séparé")
 x10 = openpyxl.load_workbook(io.BytesIO(admin.get(B, params={'p': 'export_xlsx', 'a': 2026, 'm': 10}).content))
-check(str(x10['RÉCAP VIREMENTS'].cell(3, 5).value).startswith('Régularisations'), "Excel d'octobre : colonne Régularisations")
-pdf10 = admin.get(B, params={'p': 'export_pdf', 'a': 2026, 'm': 10})
-check(pdf10.content[:5] == b'%PDF-', "PDF d'octobre généré avec les régularisations")
+check(str(x10['RÉCAP VIREMENTS'].cell(3, 4).value).startswith('Régularisations'), "Excel d'octobre : colonne Régularisations")
+pdf10 = admin.get(B, params={'p': 'export_pdf', 'a': 2026, 'm': 10, 'u': 2})
+check(pdf10.content[:5] == b'%PDF-' and 'BRASSERIE TARDIVE' in texte_pdf(pdf10.content), "PDF de remboursement d'octobre avec les régularisations")
 
 
 # ---------------------------------------------------------------- exports
@@ -350,8 +361,13 @@ if ok_x:
     wb = openpyxl.load_workbook(io.BytesIO(x.content))
     check(len(wb.sheetnames) >= 3 and any('cap' in n.lower() for n in wb.sheetnames), 'Excel : feuilles ' + ', '.join(wb.sheetnames))
     open(os.path.join(ICI, 'out-paye-equipe.xlsx'), 'wb').write(x.content) if os.environ.get('GARDER') else None
-p = admin.get(B, params={'p': 'export_pdf', 'a': 2026, 'm': 9})
-check(p.status_code == 200 and p.content[:5] == b'%PDF-' and p.content.rstrip().endswith(b'%%EOF'), f'PDF complet ({len(p.content) // 1024} Ko)')
+p = admin.get(B, params={'p': 'export_pdf', 'a': 2026, 'm': 9, 'u': 2})
+tp = texte_pdf(p.content) if p.content[:5] == b'%PDF-' else ''
+check(p.status_code == 200 and p.content.rstrip().endswith(b'%%EOF') and 'Remboursement des avances' in tp and '197,46' in tp
+      and 'DARTY' in tp and 'RESTAURANT LE MIDI' not in tp and 'Ft repas' not in tp,
+      f'PDF de remboursement de Fabien : tableau + justificatifs CB perso, sans CB entreprise ({len(p.content) // 1024} Ko)')
+check(tp.count('JUSTIFICATIF DE D') == 5, f"PDF de remboursement : 5 justificatifs après le tableau ({tp.count('JUSTIFICATIF DE D')})")
+check(admin.get(B, params={'p': 'export_pdf', 'a': 2026, 'm': 9}, allow_redirects=False).status_code == 302, 'plus de « PDF complet » du mois')
 z = admin.get(B, params={'p': 'export_zip', 'a': 2026, 'm': 9})
 ok_z = z.status_code == 200 and z.content[:2] == b'PK'
 check(ok_z, 'ZIP Pennylane téléchargé')
@@ -359,9 +375,15 @@ if ok_z:
     zf = zipfile.ZipFile(io.BytesIO(z.content))
     noms = zf.namelist()
     check(zf.testzip() is None, f'ZIP intact ({len(noms)} fichiers)')
+    check(all(n.count('/') == 1 and n.startswith('09-26 Notes de frais/') for n in noms if not n.endswith('/')),
+          'ZIP à plat : tous les fichiers dans un seul dossier')
+    check(not any(n.endswith('.xlsx') for n in noms), 'ZIP : pas de tableau Excel ni de récapitulatif')
     pdf_tickets = [n for n in noms if re.search(r'/2026-09-\d\d .+ EUR .+\.pdf$', n)]
-    check(len(pdf_tickets) >= 20, f'un PDF par ticket ({len(pdf_tickets)}), ex. : {pdf_tickets[0] if pdf_tickets else "-"}')
-    check(any('FABIEN' in n.upper() for n in noms) and any('DAVID' in n.upper() for n in noms), 'un dossier par associé')
+    check(len(pdf_tickets) == 15 and all('CB entreprise' in n for n in pdf_tickets),
+          f'un PDF par ticket CB entreprise ({len(pdf_tickets)}), ex. : {pdf_tickets[0] if pdf_tickets else "-"}')
+    check(sorted(n for n in noms if 'Remboursement' in n) == ['09-26 Notes de frais/Remboursement 09-26 DAVID TEST.pdf',
+                                                              '09-26 Notes de frais/Remboursement 09-26 FABIEN TEST.pdf'],
+          'un PDF de remboursement par associé ayant des avances')
     check(not any('TARDIVE' in n for n in noms), 'ZIP de septembre : sans les tickets régularisés sur octobre')
     if pdf_tickets:
         contenu = zf.read(pdf_tickets[0])
@@ -468,11 +490,10 @@ check(int(n) >= 5 and c and int(c['nb']) == 3, f'mise à niveau : carnet reconst
 h = fabien.get(B, params={'p': 'depense'}).text
 check(h.count('data-associe="1"') == 2, "formulaire : Fabien et David marqués comme associés (cochés par « Équipe »)")
 r = ajout(fabien, d + '08', 'repas', 46.40, 'cb_pro', [FC], 'CHEZ ANDRE', 'BAYONNE', extra={'equipe': 1})
-t = totaux()
-check(r['ok'] and 8 in t['David']['jours_primes'], "repas d'équipe avec David décoché : David garde sa prime du 8")
+check(r['ok'], "repas d'équipe avec David décoché")
+avant = totaux()['David']['total']
 r = ajout(fabien, d + '08', 'repas', 52.10, 'cb_pro', [FC, DP], 'CHEZ ANDRE', 'BAYONNE', extra={'equipe': 1})
-t = totaux()
-check(r['ok'] and 8 not in t['David']['jours_primes'], "repas d'équipe avec David coché : plus de prime le 8")
+check(r['ok'] and abs(totaux()['David']['total'] - avant) < 0.001, "repas d'équipe avec David coché : participants notés, sans effet sur les montants")
 n = php_json("(function () {"
              " $id = (int)q1(\"SELECT id FROM {depenses} WHERE equipe = 1 AND montant = 46.40\")['id'];"
              " q('DELETE FROM {convives} WHERE depense_id = ?', [$id]);"

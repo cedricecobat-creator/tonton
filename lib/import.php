@@ -10,7 +10,7 @@ declare(strict_types=1);
  * - date_debut / date_fin : JJ/MM/AAAA ou AAAA-MM-JJ (date_fin facultative)
  * - type : contient « congé » ou « formation »
  * - duree (facultatif) : nombre de jours ; une ligne de moins d'une journée
- *   (ou contenant « demi ») est ignorée, car une demi-journée ne supprime pas la prime.
+ *   (ou contenant « demi ») est ignorée : seules les journées entières sont notées.
  * Les noms de colonnes sont reconnus avec souplesse (employé, du, au, début, fin…).
  */
 function importer_absences(string $contenu): array

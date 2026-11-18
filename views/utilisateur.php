@@ -3,8 +3,8 @@ $id = (int)$cible['id'];
 $roles = module_salaries() || $cible['role'] === 'salarie' ? ROLES : array_diff_key(ROLES, ['salarie' => 1]);
 $descriptions = [
     'admin'   => 'Gère les comptes, valide les mois, fait les exports. Pas de fiche.',
-    'associe' => 'Saisit ses tickets. Fiche mensuelle avec Ft repas.',
-    'salarie' => 'Saisit ses tickets. Fiche mensuelle RH, jamais de Ft repas.',
+    'associe' => 'Saisit ses tickets. Fiche mensuelle de remboursement des avances.',
+    'salarie' => 'Saisit ses tickets. Fiche mensuelle RH.',
 ];
 $assoc = associes();
 ?>

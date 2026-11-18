@@ -41,7 +41,7 @@
     });
   }
 
-  // Cases qui enregistrent dès qu'on les coche (ex. : déduction d'une prime en régularisation)
+  // Cases qui enregistrent dès qu'on les coche
   document.addEventListener('change', function (e) {
     var c = e.target.closest && e.target.closest('[data-auto-submit]');
     if (c && c.form) c.form.submit();
